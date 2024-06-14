@@ -1,0 +1,10 @@
+*.dos
+*.sna
+*.lst
+*.sld
+*.obj
+*.labels
+*.tmp
+*.EXE
+*.exe
+*.bin
