@@ -1,4 +1,4 @@
-DEBUG               EQU 1
+DEBUG			EQU 1
 ; ==============================================
 ;	PKUNZIP utility for Sprinter version 0.7
 ;   Created by Aleksey Gavrilenko 09.02.2002
@@ -6,66 +6,66 @@ DEBUG               EQU 1
 ; ==============================================
 	SLDOPT COMMENT WPMEM, LOGPOINT, ASSERTION
 	
-    DEVICE NOSLOT64K
+	DEVICE NOSLOT64K
 
-    IF  DEBUG == 1
-        include "bios.asm"
-        include "test_data.asm"
+	IF  DEBUG == 1
+		include "bios.asm"
+		include "test_data.asm"
 
-        DS 0x80, 0
-    ENDIF
+		DS 0x80, 0
+	ENDIF
 
 ; DSS RST Entry
-DSS                 EQU 0x10
+DSS					EQU 0x10
 
 ; DSS Functions
-DSS_CREATE_FILE	    EQU 0x0B
-DSS_OPEN_FILE	    EQU 0x11
-DSS_CLOSE_FILE	    EQU 0x12
-DSS_READ_FILE	    EQU 0x13
-DSS_WRITE	        EQU 0x14
-DSS_MOVE_FP_CP	    EQU 0x0115
-DSS_FIND_FIRST	    EQU 0x0119
-DSS_FIND_NEXT	    EQU 0x011A
-DSS_MKDIR	        EQU 0x1B
-DSS_CHDIR	        EQU 0x1D
-DSS_EXIT	        EQU 0x41
-DSS_PCHARS	        EQU 0x5C
+DSS_CREATE_FILE		EQU 0x0B
+DSS_OPEN_FILE		EQU 0x11
+DSS_CLOSE_FILE		EQU 0x12
+DSS_READ_FILE		EQU 0x13
+DSS_WRITE			EQU 0x14
+DSS_MOVE_FP_CP		EQU 0x0115
+DSS_FIND_FIRST		EQU 0x0119
+DSS_FIND_NEXT		EQU 0x011A
+DSS_MKDIR			EQU 0x1B
+DSS_CHDIR			EQU 0x1D
+DSS_EXIT			EQU 0x41
+DSS_PCHARS			EQU 0x5C
 
 ; DSS Error codes
-E_FILE_EXISTS	    EQU 7
-E_FILE_NOT_FOUND    EQU 3
+E_FILE_EXISTS		EQU 7
+E_FILE_NOT_FOUND	EQU 3
 
 ; Memory pages
-PAGE0_ADDR          EQU 0x0000
-PAGE1_ADDR          EQU 0x4000
-PAGE2_ADDR          EQU 0x8000
-PAGE3_ADDR          EQU 0xC000
+PAGE0_ADDR			EQU 0x0000
+PAGE1_ADDR			EQU 0x4000
+PAGE2_ADDR			EQU 0x8000
+PAGE3_ADDR			EQU 0xC000
 
 ; Sprinter ports
 ; to switch mem pages
-PAGE0               EQU 0x82
-PAGE1               EQU 0xA2
-PAGE2               EQU 0xC2
-PAGE3               EQU 0xE2
+PAGE0				EQU 0x82
+PAGE1				EQU 0xA2
+PAGE2				EQU 0xC2
+PAGE3				EQU 0xE2
 
-BRD_SND             EQU 0xFE    ; WR_BRD?
+BRD_SND				EQU 0xFE	; WR_BRD?
 
-    ORG 0x8080
+	ORG 0x8080
 
 EXE_HEADER
 	DB	"EXE"
-	DB	0x00						                    ; EXE Version
-	DW	0x0080			 				                ; Code offset
+	DB	0x00											; EXE Version
+	DW	0x0080											; Code offset
 	DW	0
-	DW	0			  				                    ; Primary loader size
-	DW	0			  				                    ; Reserved
+	DW	0												; Primary loader size
+	DW	0												; Reserved
 	DW	0
 	DW	0
-	DW	START						                    ; Loading Address
-	DW	START						                    ; Entry Point
-	DW	STACK_TOP					                    ; Stack address
-	DS	106, 0				 		                    ; Reserved
+	DW	START											; Loading Address
+	DW	START											; Entry Point
+	DW	STACK_TOP										; Stack address
+	DS	106, 0											; Reserved
 
 	ORG 0x8100
 STACK_TOP
@@ -74,104 +74,104 @@ STACK_TOP
 ; MAIN Entry point
 ; ==============================================
 START
-    IF DEBUG == 1
-       LD IX,CMD_LINE2
-    ENDIF
-	PUSH       IX                                       ; IX ptr to cmd line
-	POP        HL
-	INC        HL                                       ; Skip size of Command line
-	LD         DE,INPUT_PATH
-	CALL       READ_CMD_PAR
-	JR         C,INVALID_CMDLINE
-	LD         DE,OUTPUT_PATH
-	CALL       READ_CMD_PAR
-	JR         NC,IS_SEC_PAR
-	LD         HL,INPUT_PATH                            ; In and out is same
-	LD         DE,OUTPUT_PATH
-	LD         BC,256
+	IF DEBUG == 1
+	LD IX,CMD_LINE2
+	ENDIF
+	PUSH	IX										; IX ptr to cmd line
+	POP		HL
+	INC		HL											; Skip size of Command line
+	LD		DE,INPUT_PATH
+	CALL	READ_CMD_PAR
+	JR		C,INVALID_CMDLINE
+	LD		DE,OUTPUT_PATH
+	CALL	READ_CMD_PAR
+	JR		NC,IS_SEC_PAR
+	LD		HL,INPUT_PATH								; In and out is same
+	LD		DE,OUTPUT_PATH
+	LD		BC,256
 	LDIR
 IS_SEC_PAR
-	LD         HL,OUTPUT_PATH
-	CALL       FIND_FILE_NAME
-	JR         START_L1
+	LD		HL,OUTPUT_PATH
+	CALL	FIND_FILE_NAME
+	JR		START_L1
 INVALID_CMDLINE
-	LD         HL,START_MESSAGE                                 ; "PKUNZIP utility for Sprinter 
-	LD         C,DSS_PCHARS
-	RST        DSS
-	LD         BC,DSS_EXIT
-	RST        DSS
+	LD		HL,START_MESSAGE							; "PKUNZIP utility for Sprinter 
+	LD		C,DSS_PCHARS
+	RST		DSS
+	LD		BC,DSS_EXIT
+	RST		DSS
 START_L1
-	LD         A,(INPUT_PATH)
-	AND        A
-	JR         Z,INVALID_CMDLINE
-	LD         HL,START_MESSAGE                                 ; "PKUNZIP utility for Sprinter 
-	LD         C,DSS_PCHARS
-	RST        DSS
-	LD         HL,INPUT_PATH
-	CALL       FIND_FILE_NAME
-	JP         C,ERR_FILE_OP
-	LD         HL,MSG_INP_PATH                                  ; "Input path:"
-	LD         C,DSS_PCHARS
-	RST        DSS
-	LD         HL,INPUT_PATH
-	LD         C,DSS_PCHARS
-	RST        DSS
-	LD         HL,MSG_EOL                                       ; '\r'
-	LD         C,DSS_PCHARS
-	RST        DSS
-	LD         HL,MSG_OUT_PATH                                  ; "Out path:"
-	LD         C,DSS_PCHARS
-	RST        DSS
-	LD         HL,OUTPUT_PATH
-	LD         C,DSS_PCHARS
-	RST        DSS
-	LD         HL,MSG_EOL                                       ; '\r'
-	LD         C,DSS_PCHARS
-	RST        DSS
-	IN         A,(PAGE0)
-	LD         (SAVE_P0),A
-	LD         HL,INPUT_PATH
-	LD         C,DSS_CHDIR
-	RST        DSS
-	JP         C,ERR_FILE_OP
-	LD         HL,FILE_SPEC
-	LD         DE,FF_WORK_BUF                                   ; Work buffer
-	LD         BC,DSS_FIND_FIRST                                ; FIND_FIRST
-	LD         A,0x2f                                           ; Attrs
-	RST        DSS
-	JP         C,ERR_FILE_OP
-	JR         GOT_INP_FILE
+	LD		A,(INPUT_PATH)
+	AND		A
+	JR		Z,INVALID_CMDLINE
+	LD		HL,START_MESSAGE							; "PKUNZIP utility for Sprinter 
+	LD		C,DSS_PCHARS
+	RST		DSS
+	LD		HL,INPUT_PATH
+	CALL	FIND_FILE_NAME
+	JP		C,ERR_FILE_OP
+	LD		HL,MSG_INP_PATH								; "Input path:"
+	LD		C,DSS_PCHARS
+	RST		DSS
+	LD		HL,INPUT_PATH
+	LD		C,DSS_PCHARS
+	RST		DSS
+	LD		HL,MSG_EOL									; '\r'
+	LD		C,DSS_PCHARS
+	RST		DSS
+	LD		HL,MSG_OUT_PATH								; "Out path:"
+	LD		C,DSS_PCHARS
+	RST		DSS
+	LD		HL,OUTPUT_PATH
+	LD		C,DSS_PCHARS
+	RST		DSS
+	LD		HL,MSG_EOL									; '\r'
+	LD		C,DSS_PCHARS
+	RST		DSS
+	IN		A,(PAGE0)
+	LD		(SAVE_P0),A
+	LD		HL,INPUT_PATH
+	LD		C,DSS_CHDIR
+	RST		DSS
+	JP		C,ERR_FILE_OP
+	LD		HL,FILE_SPEC
+	LD		DE,FF_WORK_BUF								; Work buffer
+	LD		BC,DSS_FIND_FIRST								; FIND_FIRST
+	LD		A,0x2f										; Attrs
+	RST		DSS
+	JP		C,ERR_FILE_OP
+	JR		GOT_INP_FILE
 GET_NEXT_FILE
-	LD         DE,FF_WORK_BUF
-	LD         BC,DSS_FIND_NEXT                                 ; FIND_NEXT
-	RST        DSS
-	JR         NC,GOT_INP_FILE
-	CP         E_FILE_NOT_FOUND
-	JP         NZ,ERR_FILE_OP
-	LD         HL,MSG_DEPAC_COMPLT                              ; "\r\nDepaking complited\r\n\n"
-	LD         C,DSS_PCHARS
-	RST        DSS
-	LD         BC,DSS_EXIT
-	RST        DSS
+	LD		DE,FF_WORK_BUF
+	LD		BC,DSS_FIND_NEXT							; FIND_NEXT
+	RST		DSS
+	JR		NC,GOT_INP_FILE
+	CP		E_FILE_NOT_FOUND
+	JP		NZ,ERR_FILE_OP
+	LD		HL,MSG_DEPAC_COMPLT							; "\r\nDepaking complited\r\n\n"
+	LD		C,DSS_PCHARS
+	RST		DSS
+	LD		BC,DSS_EXIT
+	RST		DSS
 GOT_INP_FILE
-	LD         HL,FF_FILE_NAME
-	XOR        A
-	LD         C,DSS_OPEN_FILE
-	RST        DSS
-	JP         C,ERR_FILE_OP
-	LD         (FH_INP),A
-	LD         HL,MSG_DEPAC_FILE                                ; "Depaking file: "
-	LD         C,DSS_PCHARS
-	RST        DSS
-	LD         HL,FF_FILE_NAME
-	LD         C,DSS_PCHARS
-	RST        DSS
+	LD		HL,FF_FILE_NAME
+	XOR		A
+	LD		C,DSS_OPEN_FILE
+	RST		DSS
+	JP		C,ERR_FILE_OP
+	LD		(FH_INP),A
+	LD		HL,MSG_DEPAC_FILE							; "Depaking file: "
+	LD		C,DSS_PCHARS
+	RST		DSS
+	LD		HL,FF_FILE_NAME
+	LD		C,DSS_PCHARS
+	RST		DSS
 RD_LOCL_HDR
-	                                                         
-	CALL       READ_HEADERS
-	JR         C,ERR_IN_ZIP
-	AND        A
-	JP         Z,GOT_LFH
+															
+	CALL	READ_HEADERS
+	JR		C,ERR_IN_ZIP
+	AND		A
+	JP		Z,GOT_LFH
 
 CLOSE_AND_NXT
 	LD		A,(FH_INP)
@@ -197,24 +197,24 @@ GOT_LFH
 	LD		HL,TEMP_BUFFR
 	XOR		A
 FND_PATH_CPY_END
-	CP		(HL)                                        ; HL => TEMP_BUFFR
+	CP		(HL)										; HL => TEMP_BUFFR
 	JR		Z,END_PATH_CPY
 	INC		HL
 	JR		FND_PATH_CPY_END
 END_PATH_CPY
 	DEC		HL
-	LD		A,(HL)                                      ; HL => TEMP_0
+	LD		A,(HL)										; HL => TEMP_0
 	CP		"\\"
 	JR		Z,IS_DIR_SEP
 	INC		HL
 	LD		(HL),"\\"									; HL => TEMP_BUFFR
 IS_DIR_SEP
 	INC		HL
-	LD		(HL),0x0						   			; mark end of string
+	LD		(HL),0x0									; mark end of string
 	LD		DE,ENTRY_FILE_NAME
 MV_PATH_0
 	LD		A,(DE)										; =>ENTRY_FILE_NAME
-	LD		(HL),A									    ; =>TEMP_BUFFR + 1
+	LD		(HL),A										; =>TEMP_BUFFR + 1
 	INC		HL
 	INC		DE
 CHK_MV_END
@@ -222,7 +222,7 @@ CHK_MV_END
 	JR		NZ,MV_PATH_0
 	LD		HL,TEMP_BUFFR
 CHK_SLASH
-	LD		A,(HL)                                      ; HL => TEMP_BUFFR
+	LD		A,(HL)										; HL => TEMP_BUFFR
 	CP		'/'
 	JR		NZ,OUT_COMP_METHOD
 	LD		(HL),"\\"
@@ -237,7 +237,7 @@ OUT_COMP_METHOD
 	LD		A,L
 	CP		9
 	JR		NC,COMP_PARAMS_EMP
-	LD		HL,MSG_STORED								; "Stored:	 "
+	LD		HL,MSG_STORED								; "Stored:	"
 	AND		A
 	JR		Z,OUT_COMP_MSG
 	LD		HL,MSG_UNSHRINK								; "Unshrinkin: "
@@ -269,7 +269,7 @@ OUT_COMP_MSG
 	LD		A,(LH_PARAMS)
 	AND		A
 	JR		Z,C_SUPPORTED
-	CP		8                                           ; DEFLATE
+	CP		8											; DEFLATE
 	JR		Z,C_SUPPORTED
 	LD		HL,MSG_RESERVD_METHOD						; "  Reserved metod!"
 	LD		C,DSS_PCHARS
@@ -292,7 +292,7 @@ COMP_PARAMS_EMP
 	
 DIR_OR_EMPTY
 	LD		HL,TEMP_BUFFR
-	CALL    MAKE_FILE_PATH
+	CALL	MAKE_FILE_PATH
 	OUT		(BRD_SND),A
 	JP		C,ERR_FILE_OP
 	JP		RD_LOCL_HDR
@@ -322,7 +322,7 @@ C_SUPPORTED
 	CPIR												; Find end of string (zero byte)
 	DEC		HL
 	DEC		HL											; HL points to last string char
-	LD		A,(HL)                                      ; HL => TEMP_0
+	LD		A,(HL)										; HL => TEMP_0
 	CP		"\\"										; it is directory separator?
 	JR		Z,DIR_OR_EMPTY
 	LD		HL,TEMP_BUFFR
@@ -333,10 +333,10 @@ C_SUPPORTED
 	CP		E_FILE_EXISTS								; FM = 7?
 	JR		Z,ERR_FILE_EXIST
 	LD		HL,TEMP_BUFFR
-	CALL    FIND_FILE_NAME
+	CALL	FIND_FILE_NAME
 	JP		C,ERR_FILE_OP
 	LD		HL,TEMP_BUFFR
-	CALL    MAKE_FILE_PATH
+	CALL	MAKE_FILE_PATH
 	JP		C,ERR_FILE_OP
 	LD		HL,TEMP_BUFFR
 	LD		C,DSS_CHDIR
@@ -365,13 +365,13 @@ OK_CREATE_FILE
 	LD		B,0x4										; TODO: Remove exltra B=4
 	
 CRC_CMP
-	LD		A,(DE)                                      ; DE => LH_CRC32
-	XOR		(HL)                                        ; HL => CRC32
+	LD		A,(DE)										; DE => LH_CRC32
+	XOR		(HL)										; HL => CRC32
 	INC		HL
 	INC		DE
 	INC		A
 	JR		NZ, CRC_CHK_ERR
-	DJNZ    CRC_CMP
+	DJNZ	CRC_CMP
 	LD		HL, MSG_OK_CR_LF							; ' '
 	LD		C, DSS_PCHARS
 	RST		DSS
@@ -434,9 +434,9 @@ READ_HEADERS
 	LD		C,DSS_READ_FILE
 	RST		DSS
 	JP		C,ERR_FILE_OP
-    ; Check Local file header signature 0x04034b50
+	; Check Local file header signature 0x04034b50
 	LD		IX,TEMP_BUFFR
-	LD		A,(IX+0)                                    ; IX =>TEMP_BUFFR
+	LD		A,(IX+0)									; IX =>TEMP_BUFFR
 	CP		50h
 	JR		NZ,ERR_LH_SIGN
 	LD		A,(IX+1)
@@ -452,9 +452,9 @@ READ_HEADERS
 	LD		DE,LH_PARAMS								; move to LH_PARAMS
 	LD		BC,18
 	LDIR
-	LD		E,(IX+0x1A)                                 ; offset LH_FN_LEN_L
-	LD		D,(IX+0x1B)                                 ; offset LH_FN_LEN_H
-	PUSH	 DE											; File Name Len
+	LD		E,(IX+0x1A)									; offset LH_FN_LEN_L
+	LD		D,(IX+0x1B)									; offset LH_FN_LEN_H
+	PUSH	DE											; File Name Len
 	LD		HL,LH_FILENAME								; File Name ptr
 	LD		A,(FH_INP)
 	LD		C,DSS_READ_FILE
@@ -463,7 +463,7 @@ READ_HEADERS
 	POP		DE
 	LD		HL,LH_FILENAME
 	ADD		HL,DE
-	LD		(HL),0x0        						    ; Mark end of string fileName
+	LD		(HL),0x0									; Mark end of string fileName
 	LD		HL,LH_FILENAME
 	INC		E
 	LD		B,0x0
@@ -479,10 +479,10 @@ READ_HEADERS
 	JR		Z,NO_DATA_DSCR
 	EX		DE,HL
 	LD		DE,12										; Skip data descriptor (3 word)
-                                                        ; crc32 dw, compressedsize dw, size dw
+														; crc32 dw, compressedsize dw, size dw
 	ADD		HL,DE
 	EX		DE,HL
-    ; no optrional data descriptor
+	; no optrional data descriptor
 NO_DATA_DSCR
 	LD		HL,LH_FILENAME
 	LD		A,(FH_INP)
@@ -496,11 +496,11 @@ ERR_LH_SIGN
 	SCF
 	RET
 
-    ; it is non local file header
+	; it is non local file header
 NO_LOCAL_FH
 	CP		0x01										; it is CentralDirectory FH?
 	JR		NZ,NO_CENTRAL_DIR
-	LD		A,(IX+3)                                    ; TMP_BUFFR+3
+	LD		A,(IX+3)									; TMP_BUFFR+3
 	CP		0x02										; valid sign 0x02014b50?
 	JR		NZ,ERR_LH_SIGN
 	LD		A,0xff
@@ -510,7 +510,7 @@ NO_LOCAL_FH
 NO_CENTRAL_DIR
 	CP		0x05										; is End of central directory?
 	JR		NZ,ERR_LH_SIGN
-	LD		A,(IX+3)                                    ; TMP_BUFFR+3
+	LD		A,(IX+3)									; TMP_BUFFR+3
 	CP		0x06										; valid sign 0x06054b50?
 	JR		NZ,ERR_LH_SIGN
 	LD		A,0xff
@@ -520,10 +520,10 @@ NO_CENTRAL_DIR
 ; ---------------------------------
 ; Read next cmd line parameter
 ; Inp: HL - pointer to cmd line position
-;	   DE - pointer to buffer to place parameter
+;	DE - pointer to buffer to place parameter
 ; ---------------------------------
 READ_CMD_PAR
-	PUSH	 DE
+	PUSH	DE
 
 FIRST_SPACE
 	LD		A,(HL)
@@ -559,7 +559,7 @@ PARAM_EOL
 ; File name from filepath
 ; HL - Buffer to seaarch
 ; ret: CF=1 - error
-;      else FILE_SPEC = file name 
+;	else FILE_SPEC = file name 
 ; ---------------------------------
 FIND_FILE_NAME
 	PUSH	HL
@@ -631,8 +631,8 @@ L_DRV_SPEC
 
 L_PATH_SPEC
 	LD		A,(DE)
-	PUSH	 AF
-	PUSH	 DE
+	PUSH	AF
+	PUSH	DE
 	XOR		A
 	LD		(DE),A
 	DEC		DE
@@ -641,7 +641,7 @@ L_PATH_SPEC
 	SCF
 	CCF
 	JR		Z,L_PATH_DS
-	PUSH	 HL
+	PUSH	HL
 	LD		C,DSS_MKDIR
 	RST		DSS
 	POP		HL
@@ -683,7 +683,7 @@ L_SPC_END
 LH_PARAMS:
 LH_METHOD:
 	DW	0
-LH_MTIME:					 
+LH_MTIME:					
 	DW	0
 LH_DATE:				
 	DW	0
@@ -700,8 +700,8 @@ LH_UCOMP_SIZE_H:
 
 START_MESSAGE:
 	DB  "PKUNZIP utility for Sprinter version 0.7\r\n"
-    DB  "Created by Aleksey Gavrilenko 09.02.2002\r\n"
-    DB  "Procedure deflate by Michail Kondratyev\r\n\r\n", 0
+	DB  "Created by Aleksey Gavrilenko 09.02.2002\r\n"
+	DB  "Procedure deflate by Michail Kondratyev\r\n\r\n", 0
 
 MSG_INP_PATH:
 	DB	"Input path:", 0
@@ -710,7 +710,7 @@ MSG_OUT_PATH:
 	DB	"Out path:", 0
 
 MSG_EOL
-    DB "\r\n", 0
+	DB "\r\n", 0
 
 MSG_DEPAC_COMPLT:
 	DB	"\r\nDepaking complited\r\n\n",0
@@ -722,7 +722,7 @@ MSG_ERR_CRC:
 	DB	"  Error CRC!", 0
 
 MSG_OK_CR_LF
-    DB "  OK", 0
+	DB "  OK", 0
 
 MSG_FILE_EXISTS:
 	DB	"  File exists!", 0
@@ -740,16 +740,16 @@ MSG_IMPLODING
 	DB	"Imploding:  ", 0
 
 MSG_REDUCED
-	DB	"Reduced:    ", 0
+	DB	"Reduced:	", 0
 
 MSG_UNSHRINK
 	DB	"Unshrinkin: ", 0
 
 MSG_STORED
-	DB	"Stored:     ", 0
+	DB	"Stored:	", 0
 
 MSG_UNKNOWN
-	DB	"Unknown:    ", 0					
+	DB	"Unknown:	", 0					
 
 MSG_WRONG_DEV
 	DB	"Wrong device!\r\n", 0
@@ -807,36 +807,36 @@ FH_OUT
 	DB	0
 ; First parameter: Path to file
 INPUT_PATH
-	DS 256, 0											 
+	DS 256, 0											
 
 ; Second parameter: Path to .zip file
 OUTPUT_PATH
-	DS 256, 0											 
+	DS 256, 0											
 
 ; Work buffer for FindFist/FindNext op (256bytes)
 FF_WORK_BUF
-    DS 33,0
+	DS 33,0
 
 FF_FILE_NAME
-    DS 223, 0
+	DS 223, 0
 
 ENTRY_FILE_NAME
-    DS 256, 0
+	DS 256, 0
 
 FILE_SPEC
-    DS 13, 0
+	DS 13, 0
 
 CRC32_L
-    DW	0
+	DW	0
 
 CRC32_H
-    DW	0
+	DW	0
 
 DW_COUNTER_L
-    DW	0
+	DW	0
 
 DW_COUNTER_H
-    DW	0
+	DW	0
 
 
 ; ---------------------------------------------------------
@@ -855,7 +855,7 @@ FILEPOS_H EQU $+2
 FILEPOS_L EQU $+1
 	LD		HL,0x0
 	LD		A,IXH
-	OR 		IXL
+	OR		IXL
 	JR		NZ,L_IX_N0
 	PUSH	HL
 	SBC		HL,DE
@@ -1033,14 +1033,14 @@ DECOMPRESS
 ; ZIP file has invalid data format
 ; ------------------------------------------
 F_HAS_BAD_TAB
-SAVE_SP     EQU $+1
+SAVE_SP	EQU $+1
 	LD		SP,0x0
 	LD		HL,(LD_NXT_WRD+1)
 	CALL	WRITE_BUFF
 	LD		A,(SAVE_P0)
 	OUT		(PAGE0),A
 	EI
-	LD		HL,MSG_BAD_TABLE								; "  File has bad table!"
+	LD		HL,MSG_BAD_TABLE							; "  File has bad table!"
 	LD		C,DSS_PCHARS
 	RST		DSS
 	RET
@@ -1085,7 +1085,7 @@ PUT_A_TO_BUFF
 	INC		HL
 	LD		(LD_NXT_WRD+1),HL
 	LD		A,H
-	CP		80h									; < 0x8000 ?
+	CP		80h											; < 0x8000 ?
 	POP		HL
 	RET		C
 	
@@ -1162,7 +1162,7 @@ CRC_NXT_BYTE
 	ADD		IX,IX
 	ADD		IX,IX
 	LD		A,D
-	XOR		(IX+0x0)										; CRC32 Table ref? 3F00*4=0xFC00
+	XOR		(IX+0x0)									; CRC32 Table ref 3F00*4=0xFC00
 	LD		E,A
 	LD		A,L
 	XOR		(IX+0x1)
@@ -1184,7 +1184,7 @@ CRC_NXT_BYTE
 WRITE_BUFF
 	LD		A,H
 	OR		L
-	RET		Z												; ret if HL=0
+	RET		Z											; ret if HL=0
 	LD		A,H
 	CP		0x40
 	JR		NC,WR_4000									; bytes > 0x4000?
@@ -1265,18 +1265,18 @@ NO_B_TO_WR
 	RET
 
 FILL0
-    DS 8843, 0
+	DS 8843, 0
 
 TEMP_0
-    DB 0
+	DB 0
 
 ; 4096 bytes buffer AFFF-BFFF
 TEMP_BUFFR  
-    DS 6, 0
+	DS 6, 0
 GPP_FLAG
-    DB 0, 0
+	DB 0, 0
 TEMP_BUFFR_8
-    DS 18, 0
+	DS 18, 0
 LH_FN_LEN_L
 	DB	0
 LH_FN_LEN_H
@@ -1287,17 +1287,17 @@ LH_EXTRA_LEN_H
 	DB	0
 LH_FILENAME
 
-    DS  1024, 0
+	DS  1024, 0
 
-;PAGE3_ADDR    
-    ALIGN 16384, 0
-    ORG   0xC000
+;PAGE3_ADDR	
+	ALIGN 16384, 0
+	ORG   0xC000
 
-    DS  4096, 0
-    DS  91,0
+	DS  4096, 0
+	DS  91,0
 ; ----
 BUFF_2
-    DS 167,0
+	DS 167,0
 
 MODE_STORED
 	LD		A,B
@@ -1323,10 +1323,10 @@ TMP_BUFFER_ADDR
 	LD		HL,0x0
 	DEC		HL
 DO_NXT_CHR
-	LD		A,(HL)                                      ; HL => TEMP_BUFFR
-	INC		HL                                          ; HL =>TEMP_BUFFR + 1        
+	LD		A,(HL)										; HL => TEMP_BUFFR
+	INC		HL											; HL =>TEMP_BUFFR + 1		
 	CALL	PUT_A_TO_BUFF
-	PUSH	HL                          
+	PUSH	HL						
 	LD		BC,0x4001
 	ADD		HL,BC
 	POP		HL
@@ -1359,8 +1359,8 @@ DO_NEXT_BLOCK
 LAST_BLK
 	LD		A,0x0
 	OR		A
-	JR		NZ,SU_L7										; non zero last blk
-	CALL	DE_DIV_2_Bm1									; DE>>1; B--
+	JR		NZ,SU_L7									; non zero last blk
+	CALL	DE_DIV_2_Bm1								; DE>>1; B--
 	LD		HL,LAST_BLK+1
 	RR		(HL)
 	CALL	INFLATE_BLOCK
@@ -1379,7 +1379,7 @@ SU_L3
 	DEC		H
 	INC		HL
 	INC		HL
-	PUSH	HL                                              ; HL => BUFF_2
+	PUSH	HL											; HL => BUFF_2
 	CALL	SUB_UNCOMP_6
 	INC		HL
 	POP		AF
@@ -1396,20 +1396,20 @@ SU_L3
 	LD		HL,0x0
 	OR		A
 	SBC		HL,DE
-	PUSH	HL                                              ; HL => BUFF_2 + 1
+	PUSH	HL											; HL => BUFF_2 + 1
 SU_L4
 	LD		HL,0x0
 	ADD		HL,DE
 	POP		DE
 	EX		DE,HL
-	PUSH	HL                                              ; HL => BUFF_2 + 1
+	PUSH	HL											; HL => BUFF_2 + 1
 	CP		A
 	SBC		HL,BC
 	POP		HL
 	EX		DE,HL
 	JR		NC,SU_L6
 	EX		DE,HL
-	PUSH	BC                                              ; BC => BUFF_2
+	PUSH	BC											; BC => BUFF_2
 	EX		(SP),HL
 	POP		BC
 	AND		A
@@ -1431,14 +1431,14 @@ SU_L7
 	LD		HL,(LD_NXT_WRD+1)
 ; --------------------------------------
 FLUSH_BUFF
-    LD         DE,0x0000
-    JP         WRITE_BUFF
+	LD		DE,0x0000
+	JP		WRITE_BUFF
 
 ; ----------------------------
 ; Data definitions  block for LZ77
 ; ----------------------------
 FILL_1
-    DS 33, 0
+	DS 33, 0
 
 ALPHABET_ORDER
 	DB	16, 17, 18, 0, 8, 7, 9, 6
@@ -1448,7 +1448,7 @@ ALPHABET_ORDER
 	ORG 0xD201
 
 EXTRA_BITS
-	DB	1, 3, 7, 15, 31, 63, 127, 255					   ; 2^n-1
+	DB	1, 3, 7, 15, 31, 63, 127, 255					; 2^n-1
 
 LZ77_BUFF
 	DS 70,0
@@ -1544,32 +1544,32 @@ SHF_RT_DE2
 MODE_ST_HUFF
 	PUSH	BC
 	PUSH	DE
-    ; Init literal/length table
-	LD		HL,CHAR_LENS					 
-	LD		BC,0x9008										;144 8 bit, from 00110000 to 101
+	; Init literal/length table
+	LD		HL,CHAR_LENS					
+	LD		BC,0x9008									;144 8 bit, from 00110000 to 101
 INI_LEN1										
-	LD      (HL),C
-	INC     HL
+	LD	(HL),C
+	INC	HL
 	DJNZ	INI_LEN1
-	LD		BC,0x7009										;122 9 bit, from 110010000 to 11
+	LD		BC,0x7009									;122 9 bit, from 110010000 to 11
 INI_LEN2										
 	LD		(HL),C
 	INC		HL
 	DJNZ	INI_LEN2
-	LD		BC,0x1807										;24 7 bit, from 0000000 to 0010111
+	LD		BC,0x1807									;24 7 bit, from 0000000 to 0010111
 INI_LEN3										
 	LD		(HL),C
 	INC		HL
 	DJNZ	INI_LEN3
-	LD		BC,0x808										 ;8 8 bit, from 11000000 to 11000
+	LD		BC,0x808									;8 8 bit, from 11000000 to 11000
 INI_LEN4										
 	LD		(HL),C
 	INC		HL
 	DJNZ	INI_LEN4
 	LD		HL,DISTANCES
-	LD		BC,0x2005										; 32
+	LD		BC,0x2005									; 32
 	LD		A,B
-INI_DISTANCES								   
+INI_DISTANCES								
 	LD		(HL),C
 	INC		HL
 	DJNZ	INI_DISTANCES
@@ -1597,7 +1597,7 @@ INFLATE_BLOCK
 	LD		HL,IX_VAL_001
 	LD		A,0x13
 SU4_L1
-	LD		(HL),0x0                                    ; HL => IX_VAL_001
+	LD		(HL),0x0									; HL => IX_VAL_001
 	INC		HL
 	DEC		A
 	JR		NZ,SU4_L1
@@ -1611,12 +1611,12 @@ SU4_L2
 	LD		A,0x3
 	CALL	GET_A_BITS
 	PUSH	DE
-	LD		E,(HL)						                ; HL => ALPHABET_ORDER
+	LD		E,(HL)										; HL => ALPHABET_ORDER
 	LD		D,0x0
 	PUSH	HL
 	LD		HL,IX_VAL_001
 	ADD		HL,DE
-	LD		(HL),A                                      ; => ram_db8a
+	LD		(HL),A										; => ram_db8a
 	POP		HL
 	POP		DE
 	INC		HL
@@ -1645,7 +1645,7 @@ SU4_L3
 	LD		E,(HL)
 	LD		HL,IX_VAL_001
 	ADD		HL,DE
-	LD		A,(HL)								; HL => IX_VAL_001
+	LD		A,(HL)										; HL => IX_VAL_001
 	LD		C,E
 	POP		DE
 	CALL	GET_RIGHT_A_BITS
@@ -1661,7 +1661,7 @@ SU4_L4
 	LD		A,0x2
 	CALL	GET_A_BITS
 	ADD		A,0x3
-	LD		C,(IX-0x1)							; =>BYTE_ram_d619
+	LD		C,(IX-0x1)									; => BYTE_ram_d619
 	JR		SU4_L8
 SU4_L5
 	CP		0x11
@@ -1677,7 +1677,7 @@ SU4_L6
 SU4_L7
 	LD		C,0x0
 SU4_L8
-	LD		(IX+0x0),C							; =>CHAR_LENS
+	LD		(IX+0x0),C									; => CHAR_LENS
 	INC		IX
 	DEC		A
 	DEC		HL
@@ -1699,14 +1699,14 @@ SU4_L9
 
 ; Init other LZ77 tables
 UN_LZ77
-HLIT        EQU $+1
-	LD		BC,0x100										 ; Count of literals and lengths
+HLIT		EQU $+1
+	LD		BC,0x100									; Count of literals and lengths
 	LD		DE,CHAR_LENS
 	LD		HL,HL_VAL_001
 	LD		IX,IX_VAL_001
 	CALL	UN_LZ77_1
-HDIST	    EQU $+1
-SU4_L11	 
+HDIST		EQU $+1
+SU4_L11	
 	LD		BC,0x0
 	LD		DE,DISTANCES
 	LD		HL,HL_VAL_002
@@ -1720,7 +1720,7 @@ SU4_L11
 UN_LZ77_1
 	LD		A,B
 	OR		C
-	RET		Z												; ret if no literals
+	RET		Z											; ret if no literals
 	LD		(LIT_CNT_LEN),BC
 	LD		(HL_VAL_000),HL
 	LD		HL,LZ77_BUFF
@@ -1735,13 +1735,13 @@ INI_BUFF1
 	DJNZ	INI_BUFF1
 	POP		BC
 	POP		HL
-	PUSH	DE											   ; ? DE -> Distances
+	PUSH	DE											; ? DE -> Distances
 
 INIT_BUFF2
 	LD		A,(DE)
 	INC		DE
 	ADD		A,A
-	ADD		A,0x9											; distance*2 + 9
+	ADD		A,0x9										; distance*2 + 9
 	LD		L,A
 	INC		(HL)
 	JR		NZ,INIT_BUFF3
@@ -1806,13 +1806,13 @@ INIT_BUFF5
 	JP		C,F_HAS_BAD_TAB
 
 CHAR_L_NE0
-	POP     DE
-	PUSH    DE
+	POP	DE
+	PUSH	DE
 LIT_CNT_LEN EQU $+1
 	LD		BC,0x0
 	LD		HL,HL_ARR_000
 INIT_BUFF6
-	LD		A,(DE)										   ; Char lengths?
+	LD		A,(DE)										; Char lengths?
 	INC		DE
 	PUSH	DE
 	ADD		A,A
@@ -1833,9 +1833,9 @@ INIT_BUFF6
 	DEC		DE
 	POP		HL
 CHAR_L_E0
-	LD		(HL),E											; =>HL_ARR_000
+	LD		(HL),E										; => HL_ARR_000
 	INC		HL
-	LD		(HL),D											; =>HL_ARR_000+1
+	LD		(HL),D										; => HL_ARR_000+1
 	INC		HL
 	POP		DE
 	DEC		BC
@@ -1868,7 +1868,7 @@ INIT_BUFF8
 	JR		Z,INIT_BUFF9
 	EX		AF,AF'
 	DEC		A
-	JR      NZ,INIT_BUFF8
+	JR	NZ,INIT_BUFF8
 	INC		A
 	EX		AF,AF'
 INIT_BUFF9
@@ -1880,9 +1880,9 @@ INIT_BUFF10
 	JR		NZ,INIT_BUFF10
 	EX		DE,HL
 	POP		HL
-	LD		(HL),D                                                          ; =>HL_ARR_000_1
+	LD		(HL),D											; => HL_ARR_000_1
 	DEC		HL
-	LD		(HL),E                                                          ; =>HL_ARR_000
+	LD		(HL),E											; => HL_ARR_000
 	POP		DE
 INIT_BUFF11
 	INC		HL
@@ -1953,8 +1953,8 @@ IB14_L1
 	JR		NZ,INIT_BUFF15
 	LD		A,L
 IB14_L2
-	CP		 0x0
-	JR		 C,INIT_BUFF14
+	CP		0x0
+	JR		C,INIT_BUFF14
 INIT_BUFF15
 	POP		HL
 	POP		DE
@@ -1963,11 +1963,11 @@ INIT_BUFF16
 	DEC		HL
 	DEC		BC
 	BIT		0x7,B
-	JR		 Z,INIT_BUFF12
+	JR		Z,INIT_BUFF12
 	RET
 INIT_BUFF17
 	SUB		0x8
-	PUSH    BC
+	PUSH	BC
 	LD		B,A
 	LD		A,D
 	LD		D,0x0
@@ -1983,7 +1983,7 @@ INIT_BUFF18
 	DEC		HL
 	LD		A,D
 	OR		E
-	JR		NZ,INIT_BUFF19								   ; (word)(HL) != 0?
+	JR		NZ,INIT_BUFF19								; (word)(HL) != 0?
 IB18_L1
 	LD		DE,0x0
 	LD		(HL),E
@@ -2036,7 +2036,7 @@ SUB_UNCOMP_5
 	PUSH	HL
 	LD		DE,CHAR_LENS
 	ADD		HL,DE
-	LD		A,(HL)                                      ; HL =>CHAR_LENS
+	LD		A,(HL)										; HL =>CHAR_LENS
 	POP		HL
 	POP		DE
 LAB_ram_d560
@@ -2093,7 +2093,7 @@ SUB_UNCOMP_6
 	PUSH	HL
 	LD		DE,DISTANCES
 	ADD		HL,DE
-	LD		A,(HL)                                      ; HL => DISTANCES
+	LD		A,(HL)										; HL => DISTANCES
 	POP		HL
 	POP		DE
 LAB_ram_d5a9
@@ -2109,7 +2109,7 @@ LAB_ram_d5a9
 	INC		L
 	INC		L
 HL_SL_C
-	ADD		HL,HL											; HL << C
+	ADD		HL,HL										; HL << C
 	DEC		C
 	JR		NZ,HL_SL_C
 	PUSH	HL
@@ -2145,10 +2145,10 @@ LD_NXT_W
 	RET
 
 FILL_2
-    DS 53, 0
+	DS 53, 0
 
 BYTE_ram_d619
-    DB 0
+	DB 0
 
 CHAR_LENS
 	DS 256, 0
@@ -2242,8 +2242,8 @@ CRC32_TAB
 	DB 0x37, 0xBE, 0x0B, 0xB4, 0xA1, 0x8E, 0x0C, 0xC3, 0x1B, 0xDF, 0x05, 0x5A, 0x8D, 0xEF, 0x02, 0x2D
 
 
-;    IF  DEBUG == 1
-;        SAVESNA "unzip.sna", START
-;    ENDIF
+;	IF  DEBUG == 1
+;		SAVESNA "unzip.sna", START
+;	ENDIF
 
 	END
