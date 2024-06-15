@@ -1,9 +1,14 @@
-DEBUG			EQU 1
-; ==============================================
+; ====================================================
 ;	PKUNZIP utility for Sprinter version 0.7
 ;   Created by Aleksey Gavrilenko 09.02.2002
 ;   Procedure deflate by Michail Kondratyev
-; ==============================================
+; ====================================================
+
+; Set to 1 to turn debug ON with DeZog VSCode plugin
+; Set to 0 to compile .EXE
+DEBUG				EQU	0
+
+
 	SLDOPT COMMENT WPMEM, LOGPOINT, ASSERTION
 	
 	DEVICE NOSLOT64K
@@ -70,14 +75,14 @@ EXE_HEADER
 	ORG 0x8100
 STACK_TOP
 
-; ==============================================
+; ====================================================
 ; MAIN Entry point
-; ==============================================
+; ====================================================
 START
 	IF DEBUG == 1
 	LD IX,CMD_LINE2
 	ENDIF
-	PUSH	IX										; IX ptr to cmd line
+	PUSH	IX											; IX ptr to cmd line
 	POP		HL
 	INC		HL											; Skip size of Command line
 	LD		DE,INPUT_PATH
@@ -136,7 +141,7 @@ START_L1
 	JP		C,ERR_FILE_OP
 	LD		HL,FILE_SPEC
 	LD		DE,FF_WORK_BUF								; Work buffer
-	LD		BC,DSS_FIND_FIRST								; FIND_FIRST
+	LD		BC,DSS_FIND_FIRST							; FIND_FIRST
 	LD		A,0x2f										; Attrs
 	RST		DSS
 	JP		C,ERR_FILE_OP
@@ -407,11 +412,11 @@ CRC_CHK_ERR
 ; FILENAME BYTE
 ; ENDS
 
-; --------------------------------------
+; ----------------------------------------------------
 ; Read local file header 
 ; ret A=0 - for LocalHileHeader
 ;	A=ff - for CentralDirectory
-; ---------------------------
+; ----------------------------------------------------
 ; ZIP Local File Header:
 ; +0 sw Signature 0x04034b50
 ; +2 w Version to extract
@@ -426,7 +431,7 @@ CRC_CHK_ERR
 ; +28 w Extra field Len (m)
 ; +30 n FileName
 ; +30+n m Extra Field
-; ----------------------------
+; ----------------------------------------------------
 READ_HEADERS
 	LD		A,(FH_INP)
 	LD		HL,TEMP_BUFFR								; DST ADDR
@@ -517,11 +522,11 @@ NO_CENTRAL_DIR
 	AND		A
 	RET
 
-; ---------------------------------
+; ----------------------------------------------------
 ; Read next cmd line parameter
 ; Inp: HL - pointer to cmd line position
 ;	DE - pointer to buffer to place parameter
-; ---------------------------------
+; ----------------------------------------------------
 READ_CMD_PAR
 	PUSH	DE
 
@@ -555,12 +560,12 @@ PARAM_EOL
 	SCF
 	RET
 
-; ---------------------------------
+; ----------------------------------------------------
 ; File name from filepath
 ; HL - Buffer to seaarch
 ; ret: CF=1 - error
 ;	else FILE_SPEC = file name 
-; ---------------------------------
+; ----------------------------------------------------
 FIND_FILE_NAME
 	PUSH	HL
 	LD		BC,0x80
@@ -599,7 +604,7 @@ NOT_BKSL
 	AND		A
 	RET
 
-; ---------------------------------
+; ----------------------------------------------------
 MAKE_FILE_PATH
 	PUSH	DE
 	PUSH	BC
@@ -675,9 +680,9 @@ L_SPC_END
 	XOR		A
 	RET
 
-; ---------------------------------------------------------
+; ----------------------------------------------------
 ; Main code Variables and Constants
-; ---------------------------------------------------------
+; ----------------------------------------------------
 
 ; Local header parameters from zip file storage
 LH_PARAMS:
@@ -740,16 +745,16 @@ MSG_IMPLODING
 	DB	"Imploding:  ", 0
 
 MSG_REDUCED
-	DB	"Reduced:	", 0
+	DB	"Reduced:    ", 0
 
 MSG_UNSHRINK
 	DB	"Unshrinkin: ", 0
 
 MSG_STORED
-	DB	"Stored:	", 0
+	DB	"Stored:     ", 0
 
 MSG_UNKNOWN
-	DB	"Unknown:	", 0					
+	DB	"Unknown:    ", 0					
 
 MSG_WRONG_DEV
 	DB	"Wrong device!\r\n", 0
@@ -839,21 +844,19 @@ DW_COUNTER_H
 	DW	0
 
 
-; ---------------------------------------------------------
+; ----------------------------------------------------
 ; End Main code Variables and Constants
-; ---------------------------------------------------------
+; ----------------------------------------------------
 
-; --------------------------------------
+; ----------------------------------------------------
 ; Load BC Bytes to (HL) from input file
-; --------------------------------------
+; ----------------------------------------------------
 LOAD_DATA_BLK
 	PUSH	BC
 	POP		DE
 	PUSH	HL
-FILEPOS_H EQU $+2
-	LD		IX,0x0
-FILEPOS_L EQU $+1
-	LD		HL,0x0
+FILEPOS_H+*	LD	IX,0x0
+FILEPOS_L+*	LD	HL,0x0
 	LD		A,IXH
 	OR		IXL
 	JR		NZ,L_IX_N0
@@ -886,7 +889,7 @@ LD_NXT_BLK
 	OUT		(PAGE0),A
 	RET
 
-; ----------------------------------------------------------
+; ----------------------------------------------------
 FL_DECOMP
 	LD		A,(LH_PARAMS)
 	AND		A
@@ -913,11 +916,11 @@ DC_NEXT_BLK
 	JP		C,ERR_FILE_OP
 	JR		DC_NEXT_BLK
 
-; ----------------------------------------------------------
+; ----------------------------------------------------
 ; Read block of uncompressed data
 ; HL - buffer to out
 ; BC - count of bytes to read
-; ----------------------------------------------------------
+; ----------------------------------------------------
 UC_READ
 	PUSH	BC
 	POP		DE
@@ -951,9 +954,9 @@ RD_DE_BYTES
 	JP		C,ERR_FILE_OP
 	RET
 
-; ----------------------------------------------------------
+; ----------------------------------------------------
 ; Handle errors with file operations
-; ----------------------------------------------------------
+; ----------------------------------------------------
 ERR_FILE_OP
 	SUB		0x2
 	LD		HL,MSG_WRONG_DEV							; "Wrong device!\r\n"
@@ -1015,9 +1018,9 @@ OF_ALRDY_CL
 	; - Terminate program
 	
 
-; ------------------------------------------
+; ----------------------------------------------------
 ; Switch pages and do inflate
-; ------------------------------------------
+; ----------------------------------------------------
 DECOMPRESS
 	DI
 	LD		(SAVE_SP),SP
@@ -1029,13 +1032,12 @@ DECOMPRESS
 	EI
 	RET
 
-; ------------------------------------------
+; ----------------------------------------------------
 ; ZIP file has invalid data format
-; ------------------------------------------
+; ----------------------------------------------------
 F_HAS_BAD_TAB
-SAVE_SP	EQU $+1
-	LD		SP,0x0
-	LD		HL,(LD_NXT_WRD+1)
+SAVE_SP+*	LD	SP,0x0
+	LD		HL,(LD_NXT_WRD)
 	CALL	WRITE_BUFF
 	LD		A,(SAVE_P0)
 	OUT		(PAGE0),A
@@ -1045,20 +1047,20 @@ SAVE_SP	EQU $+1
 	RST		DSS
 	RET
 
-; ------------------------------------------------------
+; ----------------------------------------------------
 SUB_UNCOMP_7
 	LD		A,C
 	OR		B
 	RET		Z
-LD_NXT_WRD
-	LD		DE,0x0
+LD_NXT_WRD+*	LD	DE,0x0000
+
 HAZ_BYTEZ
 	LD		A,(HL)
 	LD		(DE),A
 	INC		DE
 	PUSH	DE
 	PUSH	HL
-	LD		(LD_NXT_WRD+1),DE
+	LD		(LD_NXT_WRD),DE
 	LD		HL,0x8000
 	OR		A
 	SBC		HL,DE
@@ -1068,37 +1070,37 @@ HAZ_BYTEZ
 CONT_BYTEZ 
 	CPI
 	JP		PE,HAZ_BYTEZ
-	LD		(LD_NXT_WRD+1),DE
+	LD		(LD_NXT_WRD),DE
 	RET
 NO_BYTEZ
 	CALL	BUFF_IS_FULL
 	POP		HL
 	POP		DE
-	LD		DE,(LD_NXT_WRD+1)
+	LD		DE,(LD_NXT_WRD)
 	JR		CONT_BYTEZ
 
-; ------------------------------------------------------
+; ----------------------------------------------------
 PUT_A_TO_BUFF
 	PUSH	HL
-	LD		HL,(LD_NXT_WRD+1)
+	LD		HL,(LD_NXT_WRD)
 	LD		(HL),A
 	INC		HL
-	LD		(LD_NXT_WRD+1),HL
+	LD		(LD_NXT_WRD),HL
 	LD		A,H
 	CP		80h											; < 0x8000 ?
 	POP		HL
 	RET		C
 	
-; ------------------------------------------------------
+; ----------------------------------------------------
 BUFF_IS_FULL
 	PUSH	HL
 	PUSH	DE
 	PUSH	BC
 	PUSH	AF
-	LD		HL,(LD_NXT_WRD+1)
+	LD		HL,(LD_NXT_WRD)
 	LD		(SU_L4+1),HL
 	CALL	FLUSH_BUFF
-	LD		(LD_NXT_WRD+1),HL
+	LD		(LD_NXT_WRD),HL
 	POP		AF
 	POP		BC
 	POP		DE
@@ -1123,7 +1125,7 @@ SUNK_NO_WRAP
 	POP		HL
 	RET
 
-; ------------------------------------------------------
+; ----------------------------------------------------
 LOAD_NXT_BLOCK
 	PUSH	HL
 	PUSH	DE
@@ -1139,11 +1141,11 @@ LOAD_NXT_BLOCK
 	POP		HL
 	RET
 
-; ------------------------------------------------------
+; ----------------------------------------------------
 ; Update CRC32
 ; HL - ptr to byte buffer
 ; BC - bytes in buffer
-; ------------------------------------------------------
+; ----------------------------------------------------
 UPD_CRC
 	LD		A,B
 	OR		C
@@ -1180,7 +1182,7 @@ CRC_NXT_BYTE
 	POP		HL
 	RET
 
-; ------------------------------------------------------
+; ----------------------------------------------------
 WRITE_BUFF
 	LD		A,H
 	OR		L
@@ -1342,13 +1344,13 @@ NO_WRAP
 	POP		DE
 	JR		DO_NEXT_BLOCK
 
-; ----------------------------------------------------------
+; ----------------------------------------------------
 INFLATE
 	XOR		A
 	LD		(LAST_BLK+1),A
 	CALL	LOAD_NXT_BLOCK
 	LD		HL,0x0
-	LD		(LD_NXT_WRD+1),HL
+	LD		(LD_NXT_WRD),HL
 
 DO_NEXT_BLOCK
 	LD		HL,(TMP_BUFFER_ADDR+1)
@@ -1388,7 +1390,7 @@ SU_L3
 	PUSH	AF
 	POP		BC
 	EX		DE,HL
-	LD		HL,(LD_NXT_WRD+1)
+	LD		HL,(LD_NXT_WRD)
 	OR		A
 	SBC		HL,DE
 	JR		NC,SU_L6
@@ -1421,22 +1423,23 @@ SU_L4
 	POP		BC
 SU_L6
 	CALL	SUB_UNCOMP_7
-	LD		A,(LD_NXT_WRD+2)
+	LD		A,(LD_NXT_WRD+1) ;+1!
 	CP		0x80
 	CALL	NC,BUFF_IS_FULL
 	POP		DE
 	POP		BC
 	JR		SU_L2
 SU_L7
-	LD		HL,(LD_NXT_WRD+1)
-; --------------------------------------
+	LD		HL,(LD_NXT_WRD)
+
+; ----------------------------------------------------
 FLUSH_BUFF
 	LD		DE,0x0000
 	JP		WRITE_BUFF
 
-; ----------------------------
+; ----------------------------------------------------
 ; Data definitions  block for LZ77
-; ----------------------------
+; ----------------------------------------------------
 FILL_1
 	DS 33, 0
 
@@ -1453,9 +1456,9 @@ EXTRA_BITS
 LZ77_BUFF
 	DS 70,0
 
-; -----------------------------------------
+; ----------------------------------------------------
 ; Return A number of bits in HL from block
-; -----------------------------------------
+; ----------------------------------------------------
 HL_GET_A_BITS
 	CP		0x9
 	JR		C,HL_LESS_8B
@@ -1474,9 +1477,9 @@ HL_LESS_8B
 	LD		L,A
 	RET
 	
-; -----------------------------------------
+; ----------------------------------------------------
 ; Return A number of bits
-; -----------------------------------------
+; ----------------------------------------------------
 GET_A_BITS
 	LD		(XTRA_BITS_OFFS+1),A
 	EX		AF,AF'
@@ -1489,19 +1492,19 @@ XTRA_BITS_OFFS
 	POP		AF
 	RET
 
-; -----------------------------------------
+; ----------------------------------------------------
 ; DE/2, B--
-; -----------------------------------------
+; ----------------------------------------------------
 DE_DIV_2_Bm1
 	SRL		D
 	RR		E
 	DEC		B
 	RET		NZ
 
-; -----------------------------------------
+; ----------------------------------------------------
 ; D - next 8 bit from block
 ; B = 8
-; -----------------------------------------
+; ----------------------------------------------------
 D_NEXT_8BIT_B8
 	PUSH	AF
 	PUSH	HL
@@ -1520,10 +1523,10 @@ D_NEXT_8BIT_B8
 	POP		AF
 	RET
 
-; -----------------------------------------
+; ----------------------------------------------------
 ; Get A number of bits (rigth shift)
 ; return DE
-; -----------------------------------------
+; ----------------------------------------------------
 GET_RIGHT_A_BITS
 	CP		B
 	JR		C,SHF_RT_DE2
@@ -1699,15 +1702,14 @@ SU4_L9
 
 ; Init other LZ77 tables
 UN_LZ77
-HLIT		EQU $+1
-	LD		BC,0x100									; Count of literals and lengths
+HLIT+*	LD	BC,0x100									; Count of literals and lengths
 	LD		DE,CHAR_LENS
 	LD		HL,HL_VAL_001
 	LD		IX,IX_VAL_001
 	CALL	UN_LZ77_1
-HDIST		EQU $+1
+
 SU4_L11	
-	LD		BC,0x0
+HDIST+*	LD	BC,0x0
 	LD		DE,DISTANCES
 	LD		HL,HL_VAL_002
 	LD		IX,IX_ARR_000
@@ -1715,7 +1717,6 @@ SU4_L11
 	POP		DE
 	POP		BC
 	RET
-
 
 UN_LZ77_1
 	LD		A,B
@@ -1808,8 +1809,7 @@ INIT_BUFF5
 CHAR_L_NE0
 	POP	DE
 	PUSH	DE
-LIT_CNT_LEN EQU $+1
-	LD		BC,0x0
+LIT_CNT_LEN+*	LD	BC,0x0
 	LD		HL,HL_ARR_000
 INIT_BUFF6
 	LD		A,(DE)										; Char lengths?
@@ -1892,8 +1892,7 @@ INIT_BUFF11
 	OR		B
 	JR		NZ,INIT_BUFF7
 
-HL_VAL_000	EQU $+1
-	LD		HL,0x0
+HL_VAL_000+*	LD	HL,0x0
 	LD		E,L
 	LD		D,H
 	INC		DE
@@ -1905,7 +1904,7 @@ HL_VAL_000	EQU $+1
 	DEC		BC
 	ADD		HL,BC
 	EX		DE,HL
-	LD		(IB18_L1+1),IX
+	LD		(IB18_L1),IX
 	LD		HL,HL_ARR_000+1
 	ADD		HL,BC
 	ADD		HL,BC
@@ -1984,8 +1983,7 @@ INIT_BUFF18
 	LD		A,D
 	OR		E
 	JR		NZ,INIT_BUFF19								; (word)(HL) != 0?
-IB18_L1
-	LD		DE,0x0
+IB18_L1+*	LD	DE,0x0
 	LD		(HL),E
 	INC		HL
 	LD		(HL),D
@@ -1999,7 +1997,7 @@ IB18_L1
 	INC		HL
 	LD		(HL),A
 	INC		HL
-	LD		(IB18_L1+1),HL
+	LD		(IB18_L1),HL
 INIT_BUFF19
 	EX		DE,HL
 	EX		AF,AF'
@@ -2020,7 +2018,7 @@ INIT_BUFF20
 	JR		INIT_BUFF15
 
 ; --- Unparsed -------------
-; -----------------------------------
+; ----------------------------------------------------
 SUB_UNCOMP_5
 	PUSH	DE
 	XOR		A
@@ -2077,7 +2075,7 @@ LAB_ram_d58c
 	CALL	SUB_ram_d5cb
 	JR		LAB_ram_d560
 	
-; -----------------------------------
+; ----------------------------------------------------
 SUB_UNCOMP_6
 	PUSH	DE
 	XOR		A
@@ -2124,7 +2122,7 @@ LAB_ram_d5c5
 	CALL	SUB_ram_d5cb
 	JR		LAB_ram_d5a9
 	
-; -----------------------------------
+; ----------------------------------------------------
 SUB_ram_d5cb
 	LD		A,0x8
 	CALL	GET_RIGHT_A_BITS
@@ -2143,6 +2141,8 @@ LD_NXT_W
 	BIT		0x7,H
 	JR		NZ,HI_W_BIT1
 	RET
+
+; ----------------------------------------------------
 
 FILL_2
 	DS 53, 0
