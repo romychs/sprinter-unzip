@@ -48,6 +48,10 @@ DSS_HANDLER
     JP      Z, _READ_FILE
     CP      0x14
     JP      Z, _WRITE_FILE
+	CP		0x19
+	JP		Z, _FIND_FIRST
+	CP		0x1D
+	JP      Z, _CH_DIR
     CP      0x5C    
     JP      Z, _PCHARS
     CP      0x41
@@ -73,6 +77,7 @@ NXT_PCHAR
     JR	NZ, NXT_PCHAR
 
 NORM_EXIT
+	SCF
     CCF
     POP BC
     POP HL    
@@ -92,7 +97,7 @@ BAD_EXIT
 ; A — код  ошибки, если CF=1
 ; A - файловый манипулятор, если CF=0
 _CREATE_FILE
-    JP  DSS_OPEN_FILE
+    JP  _OPEN_FILE
 
 ; Входные значения:
 ;   HL - указатель на файловую спецификацию
@@ -177,6 +182,33 @@ _WRITE_FILE
     PUSH    BC
     LDIR
     POP     DE
+    JP      NORM_EXIT
+
+; Входные значения:
+; HL - указатель на файловую спецификацию
+; Выходные значения:
+; A - код ошибки, если CF=1
+_CH_DIR
+    JP      NORM_EXIT
+
+; Входные значения:
+; HL - указатель на файловую спецификацию
+; DE - рабочий буфер 44 байта, если B=0, иначе 256 байт
+; A - атрибуты, используемые при поиске
+; B = 0 - имя найденного файла в формате 11 байт "FilenameExt"
+; B = 1 - имя найденного файла в формате DOS "filename.ext",0
+; C - 19h
+; Выходные значения:
+; A - код ошибки, если CF=1
+_FIND_FIRST
+	PUSH	DE
+	LD 		HL, 33										; offset of file name
+	ADD 	HL, DE				
+	EX 		HL, DE
+	LD 		HL, ZIP_FILE_NAME
+	LD 		BC,9
+	LDIR
+	POP DE
     JP      NORM_EXIT
 
 

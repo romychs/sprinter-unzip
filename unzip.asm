@@ -56,6 +56,13 @@ PAGE3				EQU 0xE2
 
 BRD_SND				EQU 0xFE	; WR_BRD?
 
+; Other
+; Max number of Code Length codes
+NR_CL				EQU 19
+MAX_CL				EQU	16
+NR_LIT				EQU	288
+NR_DIST				EQU	32
+
 	ORG 0x8080
 
 EXE_HEADER
@@ -139,12 +146,13 @@ START_L1
 	LD		C,DSS_CHDIR
 	RST		DSS
 	JP		C,ERR_FILE_OP
+	; Check input file exists
 	LD		HL,FILE_SPEC
 	LD		DE,FF_WORK_BUF								; Work buffer
 	LD		BC,DSS_FIND_FIRST							; FIND_FIRST
 	LD		A,0x2f										; Attrs
 	RST		DSS
-	JP		C,ERR_FILE_OP
+	JP		C,ERR_FILE_OP								; File not found
 	JR		GOT_INP_FILE
 GET_NEXT_FILE
 	LD		DE,FF_WORK_BUF
@@ -217,14 +225,14 @@ IS_DIR_SEP
 	INC		HL
 	LD		(HL),0x0									; mark end of string
 	LD		DE,ENTRY_FILE_NAME
-MV_PATH_0
+ADD_NAME_TO_PATH
 	LD		A,(DE)										; =>ENTRY_FILE_NAME
 	LD		(HL),A										; =>TEMP_BUFFR + 1
 	INC		HL
 	INC		DE
 CHK_MV_END
 	AND		A
-	JR		NZ,MV_PATH_0
+	JR		NZ,ADD_NAME_TO_PATH
 	LD		HL,TEMP_BUFFR
 CHK_SLASH
 	LD		A,(HL)										; HL => TEMP_BUFFR
@@ -305,9 +313,9 @@ DIR_OR_EMPTY
 ; Supported compression method. Stored of Deflate
 C_SUPPORTED
 	LD		HL,(LH_COMP_SIZE_L)
-	LD		(FILEPOS_L),HL
+	LD		(BYTES_REMAINS_L),HL
 	LD		DE,(LH_COMP_SIZE_H)
-	LD		(FILEPOS_H),DE
+	LD		(BYTES_REMAINS_H),DE
 	LD		HL,0xffff
 	LD		(CRC32_L),HL
 	LD		(CRC32_H),HL
@@ -322,6 +330,7 @@ C_SUPPORTED
 	OR		E
 	JR		Z,DIR_OR_EMPTY
 	LD		HL,TEMP_BUFFR
+	; check end of file name for '\'
 	XOR		A
 	LD		BC,0x80
 	CPIR												; Find end of string (zero byte)
@@ -855,8 +864,8 @@ LOAD_DATA_BLK
 	PUSH	BC
 	POP		DE
 	PUSH	HL
-FILEPOS_H+*	LD	IX,0x0
-FILEPOS_L+*	LD	HL,0x0
+BYTES_REMAINS_H+*	LD	IX,0x0
+BYTES_REMAINS_L+*	LD	HL,0x0
 	LD		A,IXH
 	OR		IXL
 	JR		NZ,L_IX_N0
@@ -872,8 +881,8 @@ L_IX_N0
 	JR		NC,LD_NXT_BLK
 	DEC		IX
 LD_NXT_BLK
-	LD		(FILEPOS_H),IX
-	LD		(FILEPOS_L),HL
+	LD		(BYTES_REMAINS_H),IX
+	LD		(BYTES_REMAINS_L),HL
 	LD		A,D
 	OR		E
 	POP		HL
@@ -885,7 +894,7 @@ LD_NXT_BLK
 	RST		DSS
 	JP		C,ERR_FILE_OP
 	DI
-	LD		A,(WORK_P0)									; Restore our Page0 state
+	LD		A,(WORK_P0)									; Restore our work Page0 
 	OUT		(PAGE0),A
 	RET
 
@@ -897,9 +906,9 @@ FL_DECOMP
 	; file stored without compression
 DC_NEXT_BLK
 	LD		HL,PAGE1_ADDR
-	LD		BC,16384
+	LD		BC,16384									; BC - bytes to read
 	CALL	UC_READ
-	LD		A,D
+	LD		A,D											; DE - bytes readed
 	OR		E
 	RET		Z
 	LD		HL,PAGE1_ADDR
@@ -923,10 +932,10 @@ DC_NEXT_BLK
 ; ----------------------------------------------------
 UC_READ
 	PUSH	BC
-	POP		DE
+	POP		DE											; DE = BC
 	PUSH	HL
-	LD		IX,(FILEPOS_H)
-	LD		HL,(FILEPOS_L)
+	LD		IX,(BYTES_REMAINS_H)
+	LD		HL,(BYTES_REMAINS_L)
 	LD		A,IXH
 	OR		IXL
 	JR	NZ,RD_UNTL_END
@@ -942,12 +951,14 @@ RD_UNTL_END
 	JR		NC,RD_DE_BYTES
 	DEC		IX
 RD_DE_BYTES
-	LD		(FILEPOS_H),IX
-	LD		(FILEPOS_L),HL
-	LD		A,D
+	LD		(BYTES_REMAINS_H),IX
+	LD		(BYTES_REMAINS_L),HL
+	LD		A,D											; if DE != 0 -> read else ret
 	OR		E
 	POP		HL
 	RET		Z
+	; HL - адрес в памяти
+	; DE - количество читаемых байт
 	LD		C,DSS_READ_FILE
 	LD		A,(FH_INP)
 	RST		DSS
@@ -1037,7 +1048,7 @@ DECOMPRESS
 ; ----------------------------------------------------
 F_HAS_BAD_TAB
 SAVE_SP+*	LD	SP,0x0
-	LD		HL,(LD_NXT_WRD)
+	LD		HL,(NXT_WRD_PTR)
 	CALL	WRITE_BUFF
 	LD		A,(SAVE_P0)
 	OUT		(PAGE0),A
@@ -1048,11 +1059,15 @@ SAVE_SP+*	LD	SP,0x0
 	RET
 
 ; ----------------------------------------------------
+; Inp: 	BC - count
+;		HL - addr
+; Out: 	DE - Next word ptr
+; ----------------------------------------------------
 SUB_UNCOMP_7
 	LD		A,C
 	OR		B
 	RET		Z
-LD_NXT_WRD+*	LD	DE,0x0000
+NXT_WRD_PTR+*	LD	DE,0x0000
 
 HAZ_BYTEZ
 	LD		A,(HL)
@@ -1060,7 +1075,7 @@ HAZ_BYTEZ
 	INC		DE
 	PUSH	DE
 	PUSH	HL
-	LD		(LD_NXT_WRD),DE
+	LD		(NXT_WRD_PTR),DE
 	LD		HL,0x8000
 	OR		A
 	SBC		HL,DE
@@ -1068,24 +1083,24 @@ HAZ_BYTEZ
 	POP		HL
 	POP		DE
 CONT_BYTEZ 
-	CPI
+	CPI													; CP A,(HL) DEC BC
 	JP		PE,HAZ_BYTEZ
-	LD		(LD_NXT_WRD),DE
+	LD		(NXT_WRD_PTR),DE
 	RET
 NO_BYTEZ
 	CALL	BUFF_IS_FULL
 	POP		HL
 	POP		DE
-	LD		DE,(LD_NXT_WRD)
+	LD		DE,(NXT_WRD_PTR)
 	JR		CONT_BYTEZ
 
 ; ----------------------------------------------------
 PUT_A_TO_BUFF
 	PUSH	HL
-	LD		HL,(LD_NXT_WRD)
+	LD		HL,(NXT_WRD_PTR)
 	LD		(HL),A
 	INC		HL
-	LD		(LD_NXT_WRD),HL
+	LD		(NXT_WRD_PTR),HL
 	LD		A,H
 	CP		80h											; < 0x8000 ?
 	POP		HL
@@ -1097,10 +1112,10 @@ BUFF_IS_FULL
 	PUSH	DE
 	PUSH	BC
 	PUSH	AF
-	LD		HL,(LD_NXT_WRD)
-	LD		(SU_L4+1),HL
+	LD		HL,(NXT_WRD_PTR)
+	LD		(NXT_WRD),HL
 	CALL	FLUSH_BUFF
-	LD		(LD_NXT_WRD),HL
+	LD		(NXT_WRD_PTR),HL
 	POP		AF
 	POP		BC
 	POP		DE
@@ -1124,7 +1139,8 @@ SUNK_NO_WRAP
 	POP		DE
 	POP		HL
 	RET
-
+; ----------------------------------------------------
+; Load next block of compressed data to TEMP_BUFFR
 ; ----------------------------------------------------
 LOAD_NXT_BLOCK
 	PUSH	HL
@@ -1132,7 +1148,7 @@ LOAD_NXT_BLOCK
 	PUSH	BC
 	PUSH	IX
 	LD		HL,TEMP_BUFFR
-	LD		(TMP_BUFFER_ADDR+1),HL
+	LD		(TMP_BUFFER_ADDR),HL
 	LD		BC,4095
 	CALL	LOAD_DATA_BLK
 	POP		IX
@@ -1307,9 +1323,9 @@ MODE_STORED
 	CP		0x8
 	CALL	NZ,GET_RIGHT_A_BITS
 	EX		DE,HL
-	CALL	D_NEXT_8BIT_B8								; Get LEN_L
+	CALL	GET_NEXT_8B								; Get LEN_L
 	LD		E,D
-	CALL	D_NEXT_8BIT_B8								; Get LEN_H
+	CALL	GET_NEXT_8B								; Get LEN_H
 	LD		A,D
 	XOR		H
 	LD		D,A
@@ -1318,11 +1334,10 @@ MODE_STORED
 	AND		D
 	INC		A
 	JP		NZ,F_HAS_BAD_TAB
-	CALL	D_NEXT_8BIT_B8								; Get NLEN?
+	CALL	GET_NEXT_8B								; Get NLEN?
 	EX		DE,HL
-	; Move next DE bytes from input to output
-TMP_BUFFER_ADDR
-	LD		HL,0x0
+	; Move next DE bytes from input buffer to output
+TMP_BUFFER_ADDR+* LD	HL,0x0000
 	DEC		HL
 DO_NXT_CHR
 	LD		A,(HL)										; HL => TEMP_BUFFR
@@ -1340,34 +1355,34 @@ NO_WRAP
 	LD		A,D
 	OR		E
 	JR		NZ,DO_NXT_CHR
-	LD		(TMP_BUFFER_ADDR+1),HL
+	LD		(TMP_BUFFER_ADDR),HL
 	POP		DE
 	JR		DO_NEXT_BLOCK
 
 ; ----------------------------------------------------
 INFLATE
 	XOR		A
-	LD		(LAST_BLK+1),A
+	LD		(ZIP_EOF),A
 	CALL	LOAD_NXT_BLOCK
 	LD		HL,0x0
-	LD		(LD_NXT_WRD),HL
+	LD		(NXT_WRD_PTR),HL
 
 DO_NEXT_BLOCK
-	LD		HL,(TMP_BUFFER_ADDR+1)
+	LD		HL,(TMP_BUFFER_ADDR)
 	LD		E,(HL)
 	INC		HL
-	LD		(TMP_BUFFER_ADDR+1),HL
-	CALL	D_NEXT_8BIT_B8								; DE = next 16 bit from inp; b=8
-LAST_BLK
-	LD		A,0x0
+	LD		(TMP_BUFFER_ADDR),HL
+	CALL	GET_NEXT_8B								; DE = next 16 bit from inp; b=8
+DO_NEXT_BLK
+ZIP_EOF+*	LD	A,0x0									; 0Ah - work mem blk in page0
 	OR		A
-	JR		NZ,SU_L7									; non zero last blk
-	CALL	DE_DIV_2_Bm1								; DE>>1; B--
-	LD		HL,LAST_BLK+1
-	RR		(HL)
-	CALL	INFLATE_BLOCK
+	JR		NZ,ZIP_END									; non zero last blk
+	CALL	DE_DIV_2_Bm1								; DE>>1; B-- E0 -> CY
+	LD		HL,ZIP_EOF
+	RR		(HL)										; CY -> 7bit
+	CALL	READ_HUFF_BLOCK
 SU_L2
-	CALL	SUB_UNCOMP_5
+	CALL	NEXT_SYM
 	LD		A,H
 	OR		A
 	JR		NZ,SU_L3
@@ -1377,7 +1392,7 @@ SU_L2
 SU_L3
 	DEC		A
 	OR		L
-	JR		Z,LAST_BLK
+	JR		Z,DO_NEXT_BLK
 	DEC		H
 	INC		HL
 	INC		HL
@@ -1390,7 +1405,7 @@ SU_L3
 	PUSH	AF
 	POP		BC
 	EX		DE,HL
-	LD		HL,(LD_NXT_WRD)
+	LD		HL,(NXT_WRD_PTR)
 	OR		A
 	SBC		HL,DE
 	JR		NC,SU_L6
@@ -1399,8 +1414,7 @@ SU_L3
 	OR		A
 	SBC		HL,DE
 	PUSH	HL											; HL => BUFF_2 + 1
-SU_L4
-	LD		HL,0x0
+NXT_WRD+*	LD	HL,0x0
 	ADD		HL,DE
 	POP		DE
 	EX		DE,HL
@@ -1423,14 +1437,14 @@ SU_L4
 	POP		BC
 SU_L6
 	CALL	SUB_UNCOMP_7
-	LD		A,(LD_NXT_WRD+1) ;+1!
+	LD		A,(NXT_WRD_PTR+1) ;+1!
 	CP		0x80
 	CALL	NC,BUFF_IS_FULL
 	POP		DE
 	POP		BC
 	JR		SU_L2
-SU_L7
-	LD		HL,(LD_NXT_WRD)
+ZIP_END
+	LD		HL,(NXT_WRD_PTR)
 
 ; ----------------------------------------------------
 FLUSH_BUFF
@@ -1443,7 +1457,8 @@ FLUSH_BUFF
 FILL_1
 	DS 33, 0
 
-ALPHABET_ORDER
+; Code Lengths Order
+CL_ORDER
 	DB	16, 17, 18, 0, 8, 7, 9, 6
 	DB	10, 5, 11, 4, 12, 3, 13, 2
 	DB	14,	1, 15
@@ -1453,7 +1468,7 @@ ALPHABET_ORDER
 EXTRA_BITS
 	DB	1, 3, 7, 15, 31, 63, 127, 255					; 2^n-1
 
-LZ77_BUFF
+BL_CNT
 	DS 70,0
 
 ; ----------------------------------------------------
@@ -1465,14 +1480,14 @@ HL_GET_A_BITS
 	SUB		0x8
 	LD		H,A
 	LD		A,0x8
-	CALL	GET_A_BITS
+	CALL	READ_A_BITS
 	LD		L,A
 	LD		A,H
-	CALL	GET_A_BITS
+	CALL	READ_A_BITS
 	LD		H,A
 	RET
 HL_LESS_8B
-	CALL	GET_A_BITS
+	CALL	READ_A_BITS
 	LD		H,0x0
 	LD		L,A
 	RET
@@ -1480,11 +1495,10 @@ HL_LESS_8B
 ; ----------------------------------------------------
 ; Return A number of bits
 ; ----------------------------------------------------
-GET_A_BITS
-	LD		(XTRA_BITS_OFFS+1),A
+READ_A_BITS
+	LD		(XTRA_BITS_OFFS),A
 	EX		AF,AF'
-XTRA_BITS_OFFS
-	LD		A,(EXTRA_BITS)								; = 1
+XTRA_BITS_OFFS+*	LD	A,(EXTRA_BITS)					; = 3
 	AND		E
 	PUSH	AF
 	EX		AF,AF'
@@ -1497,35 +1511,37 @@ XTRA_BITS_OFFS
 ; ----------------------------------------------------
 DE_DIV_2_Bm1
 	SRL		D
-	RR		E
+	RR		E											; E[0] -> CY
 	DEC		B
 	RET		NZ
 
 ; ----------------------------------------------------
-; D - next 8 bit from block
-; B = 8
+; Get next 8 bits from buffer 
+; Out: D - next 8 bit from block
+; 	   B = 8
 ; ----------------------------------------------------
-D_NEXT_8BIT_B8
+GET_NEXT_8B
 	PUSH	AF
 	PUSH	HL
 	PUSH	BC
-	LD		HL,(TMP_BUFFER_ADDR+1)
+	LD		HL,(TMP_BUFFER_ADDR)
 	LD		BC,0x4001
 	ADD		HL,BC
 	POP		BC
 	CALL	C,LOAD_NXT_BLOCK
-	LD		HL,(TMP_BUFFER_ADDR+1)
+	LD		HL,(TMP_BUFFER_ADDR)
 	LD		D,(HL)
 	INC		HL
-	LD		(TMP_BUFFER_ADDR+1),HL
+	LD		(TMP_BUFFER_ADDR),HL
 	LD		B,0x8
 	POP		HL
 	POP		AF
 	RET
 
 ; ----------------------------------------------------
-; Get A number of bits (rigth shift)
-; return DE
+; Get number of bits (rigth shift)
+; Inp: A - bits to get, B - bits remains
+; Out: DE
 ; ----------------------------------------------------
 GET_RIGHT_A_BITS
 	CP		B
@@ -1535,7 +1551,7 @@ SHF_RT_DE1
 	RR		E
 	DEC		A
 	DJNZ	SHF_RT_DE1
-	CALL	D_NEXT_8BIT_B8
+	CALL	GET_NEXT_8B
 SHF_RT_DE2
 	OR		A
 	RET		Z
@@ -1548,7 +1564,7 @@ MODE_ST_HUFF
 	PUSH	BC
 	PUSH	DE
 	; Init literal/length table
-	LD		HL,CHAR_LENS					
+	LD		HL,LEN_LD					
 	LD		BC,0x9008									;144 8 bit, from 00110000 to 101
 INI_LEN1										
 	LD	(HL),C
@@ -1578,188 +1594,199 @@ INI_DISTANCES
 	DJNZ	INI_DISTANCES
 	LD		(HDIST),A
 	LD		(HLIT),A
-	JP		UN_LZ77
+	JP		LOAD_LIT_DIST
 ;
 
-INFLATE_BLOCK
+READ_HUFF_BLOCK
 	LD		A,0x2
-	CALL	GET_A_BITS									; Get block compression mode
+	CALL	READ_A_BITS									; Get block compression mode
 	DEC		A
 	JP		M,MODE_STORED
 	JR		Z,MODE_ST_HUFF
 	DEC		A
 	JP		NZ,F_HAS_BAD_TAB							; MODE 11 - reserved
 	LD		A,0x5										; Get HLIT
-	CALL	GET_A_BITS
-	INC		A
-	LD		(HLIT),A
+	CALL	READ_A_BITS
+	INC		A											; +1
+	LD		(HLIT),A								    ; +0x0100
 	LD		A,0x5										; Get HDIST
-	CALL	GET_A_BITS
+	CALL	READ_A_BITS
 	INC		A
 	LD		(HDIST),A
-	LD		HL,IX_VAL_001
-	LD		A,0x13
-SU4_L1
-	LD		(HL),0x0									; HL => IX_VAL_001
+	LD		HL,LIT_TR
+	LD		A,NR_CL
+CLR_LIT_TR
+	LD		(HL),0x0									; HL => LIT_TR
 	INC		HL
 	DEC		A
-	JR		NZ,SU4_L1
+	JR		NZ,CLR_LIT_TR
 	; Read HCLEN (4bit)
 	LD		A,0x4
-	CALL	GET_A_BITS
-	ADD		A,0x4
+	CALL	READ_A_BITS
+	ADD		A,0x4										; number of Code Length codes  (4 - 19)
 	LD		C,A
-	LD		HL,ALPHABET_ORDER
-SU4_L2
+	LD		HL,CL_ORDER
+
+; (HCLEN + 4) x 3 bits: code lengths for the code length
+; alphabet given just above, in the order: 16, 17, 18 ...
+GET_NXT_CL
 	LD		A,0x3
-	CALL	GET_A_BITS
+	CALL	READ_A_BITS
 	PUSH	DE
-	LD		E,(HL)										; HL => ALPHABET_ORDER
+	LD		E,(HL)										; HL => CL_ORDER
 	LD		D,0x0
 	PUSH	HL
-	LD		HL,IX_VAL_001
+	LD		HL,LIT_TR
 	ADD		HL,DE
 	LD		(HL),A										; => ram_db8a
 	POP		HL
 	POP		DE
 	INC		HL
 	DEC		C
-	JR		NZ,SU4_L2
+	JR		NZ,GET_NXT_CL
 	PUSH	BC
 	PUSH	DE
-	LD		HL,HL_VAL_001
-	LD		DE,IX_VAL_001
-	LD		BC,0x13
-	CALL	UN_LZ77_1
+	LD		HL,CL_TR
+	LD		DE,LIT_TR
+	LD		BC,NR_CL						
+	CALL	BUILD_CODE
 	LD		HL,(HLIT)
 	LD		DE,(HDIST)
 	ADD		HL,DE
 	DEC		HL
 	POP		DE
 	POP		BC
-	LD		IX,CHAR_LENS
-SU4_L3
+	LD		IX,LEN_LD
+MN_CN2
 	PUSH	HL
 	PUSH	DE
 	LD		D,0x0
-	LD		HL,HL_VAL_001
+	LD		HL,CL_TR
 	ADD		HL,DE
 	ADD		HL,DE
 	LD		E,(HL)
-	LD		HL,IX_VAL_001
+	LD		HL,LIT_TR
 	ADD		HL,DE
-	LD		A,(HL)										; HL => IX_VAL_001
+	LD		A,(HL)										; HL => LIT_TR
 	LD		C,E
 	POP		DE
 	CALL	GET_RIGHT_A_BITS
 	LD		A,C
 	POP		HL
-	CP		0x10
-	JR		NC,SU4_L4
-	LD		C,A
+	CP		0x10										; 
+	JR		NC,CL_16									; >= Next bytes - length
+	LD		C,A											; len 1
 	LD		A,0x1
-	JR		SU4_L8
-SU4_L4
-	JR		NZ,SU4_L5
+	JR		CL_CMPL
+CL_16
+	JR		NZ,CL_17
+	; 16: Copy the previous code length 3 - 6 times. (2 bits length 0 = 3, ... , 3 = 6)
 	LD		A,0x2
-	CALL	GET_A_BITS
-	ADD		A,0x3
+	CALL	READ_A_BITS
+	ADD		A,3
 	LD		C,(IX-0x1)									; => BYTE_ram_d619
-	JR		SU4_L8
-SU4_L5
+	JR		CL_CMPL
+CL_17
 	CP		0x11
-	JR		NZ,SU4_L6
-	LD		A,0x3
-	CALL	GET_A_BITS
-	ADD		A,0x3
-	JR		SU4_L7
-SU4_L6
-	LD		A,0x7
-	CALL	GET_A_BITS
-	ADD		A,0xb
-SU4_L7
+	JR		NZ,CL_18
+	; Repeat a code length of 0 for 3 - 10 times. (3 bits of length)
+	LD		A,3
+	CALL	READ_A_BITS
+	ADD		A,3
+	JR		CL_END
+CL_18
+	; Repeat a code length of 0 for 11 - 138 times (7 bits of length)
+	LD		A,7
+	CALL	READ_A_BITS
+	ADD		A,11
+CL_END
 	LD		C,0x0
-SU4_L8
-	LD		(IX+0x0),C									; => CHAR_LENS
+CL_CMPL
+	LD		(IX+0x0),C									; => LEN_LD
 	INC		IX
-	DEC		A
+	DEC		A											; A = rpt cnt - 1
 	DEC		HL
-	JR		Z,SU4_L9
+	JR		Z,CL_HL_0
 	BIT		0x7,H
 	JP		NZ,F_HAS_BAD_TAB
-	JR		SU4_L8
-SU4_L9
+	JR		CL_CMPL
+CL_HL_0
 	BIT		0x7,H
-	JR		Z,SU4_L3
+	JR		Z,MN_CN2
 	PUSH	BC
 	PUSH	DE
-	LD		HL,CHAR_LENS
+	LD		HL,LEN_LD
 	LD		DE,(HLIT)
 	ADD		HL,DE
 	LD		DE,DISTANCES
 	LD		BC,(HDIST)
 	LDIR
 
-; Init other LZ77 tables
-UN_LZ77
-HLIT+*	LD	BC,0x100									; Count of literals and lengths
-	LD		DE,CHAR_LENS
-	LD		HL,HL_VAL_001
-	LD		IX,IX_VAL_001
-	CALL	UN_LZ77_1
+; ------------------------------------------------------
+; Load literal/length and distance alphabets
+; ------------------------------------------------------
+LOAD_LIT_DIST
+; Load HLIT + 257 code lengths for the literal/length alphabet
+HLIT+*	LD	BC,0x0100									; Count of literals and lengths (+257)
+	LD		DE,LEN_LD
+	LD		HL,CL_TR
+	LD		IX,LIT_TR
+	CALL	BUILD_CODE
 
-SU4_L11	
+; Load HDIST + 1 code lengths for the distance alphabet,
 HDIST+*	LD	BC,0x0
 	LD		DE,DISTANCES
-	LD		HL,HL_VAL_002
-	LD		IX,IX_ARR_000
-	CALL	UN_LZ77_1
+	LD		HL,N_CODE
+	LD		IX,DIST_TR
+	CALL	BUILD_CODE
 	POP		DE
 	POP		BC
 	RET
 
-UN_LZ77_1
+; ------------------------------------------------------
+BUILD_CODE
 	LD		A,B
 	OR		C
 	RET		Z											; ret if no literals
-	LD		(LIT_CNT_LEN),BC
-	LD		(HL_VAL_000),HL
-	LD		HL,LZ77_BUFF
+	LD		(NR_SYM),BC
+	LD		(LEN_PTR),HL								; HL -> CL_TR
+	LD		HL,BL_CNT
 	PUSH	HL												
 	PUSH	BC
-	LD		BC,0x2000
+	LD		BC,0x2000									
 
-; [32]=0
-INI_BUFF1
+	; BL_CNT[32]=0
+BL_CNT_0
 	LD		(HL),C											
 	INC		HL
-	DJNZ	INI_BUFF1
+	DJNZ	BL_CNT_0
 	POP		BC
-	POP		HL
-	PUSH	DE											; ? DE -> Distances
+	POP		HL											; HL -> BL_CNT
+	PUSH	DE	
 
-INIT_BUFF2
-	LD		A,(DE)
+BC_LP_1
+	LD		A,(DE)										; DE -> LIT_TR
 	INC		DE
 	ADD		A,A
-	ADD		A,0x9										; distance*2 + 9
+	ADD		A,9											; distance*2 + 9
 	LD		L,A
 	INC		(HL)
-	JR		NZ,INIT_BUFF3
+	JR		NZ,BC_NO_L
 	INC		HL
 	INC		(HL)
 
-INIT_BUFF3
+BC_NO_L
 	DEC		BC
 	LD		A,B
 	OR		C
-	JR		NZ,INIT_BUFF2
+	JR		NZ,BC_LP_1
+
 	LD		L,45
 	LD		(HL),C
 	INC		HL
 	LD		(HL),C
 	PUSH	BC
-	LD		BC,0xf02
+	LD		BC,0x0f02			
 	
 INIT_BUFF4
 	LD		A,C
@@ -1802,15 +1829,15 @@ INIT_BUFF5
 	EX		DE,HL
 	DEC		A
 	JR		NZ,INIT_BUFF5
-	LD		HL,0xfffe
+	LD		HL,0xfffe									; END_OF_CODE?
 	ADD		HL,DE
 	JP		C,F_HAS_BAD_TAB
 
 CHAR_L_NE0
 	POP	DE
 	PUSH	DE
-LIT_CNT_LEN+*	LD	BC,0x0
-	LD		HL,HL_ARR_000
+NR_SYM+*	LD	BC,0x0
+	LD		HL,NODES
 INIT_BUFF6
 	LD		A,(DE)										; Char lengths?
 	INC		DE
@@ -1820,8 +1847,8 @@ INIT_BUFF6
 	LD		D,A
 	JR		Z,CHAR_L_E0
 	PUSH	HL
-	LD		H,210
-	ADD		A,43
+	LD		H,high BL_CNT										; 0xD2
+	ADD		A,(low BL_CNT) + 34									; +43
 	LD		L,A
 	LD		E,(HL)
 	INC		HL
@@ -1833,9 +1860,9 @@ INIT_BUFF6
 	DEC		DE
 	POP		HL
 CHAR_L_E0
-	LD		(HL),E										; => HL_ARR_000
+	LD		(HL),E										; => NODES
 	INC		HL
-	LD		(HL),D										; => HL_ARR_000+1
+	LD		(HL),D										; => NODES+1
 	INC		HL
 	POP		DE
 	DEC		BC
@@ -1844,8 +1871,8 @@ CHAR_L_E0
 	JR		NZ,INIT_BUFF6
 	POP		DE
 	PUSH	DE
-	LD		HL,HL_ARR_000
-	LD		BC,(LIT_CNT_LEN)
+	LD		HL,NODES
+	LD		BC,(NR_SYM)
 INIT_BUFF7
 	LD		A,(DE)
 	INC		DE
@@ -1856,8 +1883,8 @@ INIT_BUFF7
 	LD		E,(HL)
 	INC		HL
 	LD		D,(HL)
-	PUSH	HL
-	LD		HL,0x0
+    PUSH	HL
+    LD		HL,0x0
 INIT_BUFF8
 	SRL		D
 	RR		E
@@ -1868,7 +1895,7 @@ INIT_BUFF8
 	JR		Z,INIT_BUFF9
 	EX		AF,AF'
 	DEC		A
-	JR	NZ,INIT_BUFF8
+	JR		NZ,INIT_BUFF8
 	INC		A
 	EX		AF,AF'
 INIT_BUFF9
@@ -1880,9 +1907,9 @@ INIT_BUFF10
 	JR		NZ,INIT_BUFF10
 	EX		DE,HL
 	POP		HL
-	LD		(HL),D											; => HL_ARR_000_1
+	LD		(HL),D											; => NODES_1
 	DEC		HL
-	LD		(HL),E											; => HL_ARR_000
+	LD		(HL),E											; => NODES
 	POP		DE
 INIT_BUFF11
 	INC		HL
@@ -1892,20 +1919,21 @@ INIT_BUFF11
 	OR		B
 	JR		NZ,INIT_BUFF7
 
-HL_VAL_000+*	LD	HL,0x0
+LEN_PTR+*	LD	HL,0x0000
 	LD		E,L
 	LD		D,H
 	INC		DE
 	LD		BC,511
 	LD		(HL),A
-	LDIR
+	LDIR												; Shift LEN_TR  right 1 byte
 	POP		HL
-	LD		BC,(LIT_CNT_LEN)
+	LD		BC,(NR_SYM)
 	DEC		BC
 	ADD		HL,BC
 	EX		DE,HL
-	LD		(IB18_L1),IX
-	LD		HL,HL_ARR_000+1
+	//;+++
+	LD		(TR_PTR),IX								; LIT_TR or DIST_TR addr
+	LD		HL,NODES+1
 	ADD		HL,BC
 	ADD		HL,BC
 INIT_BUFF12
@@ -1929,11 +1957,11 @@ INIT_BUFF13
 	JR		NZ,INIT_BUFF13
 	EX		DE,HL
 	ADD		HL,HL
-	LD		A,(HL_VAL_000)
+	LD		A,(LEN_PTR)
 	ADD		A,L
 	LD		L,A
 	LD		(IB14_L2+1),A
-	LD		A,(HL_VAL_000+1)
+	LD		A,(LEN_PTR+1)
 	ADC		A,H
 	LD		H,A
 	INC		A
@@ -1970,7 +1998,7 @@ INIT_BUFF17
 	LD		B,A
 	LD		A,D
 	LD		D,0x0
-	LD		HL,(HL_VAL_000)
+	LD		HL,(LEN_PTR)
 	ADD		HL,DE
 	ADD		HL,DE
 	LD		C,0x1
@@ -1983,7 +2011,7 @@ INIT_BUFF18
 	LD		A,D
 	OR		E
 	JR		NZ,INIT_BUFF19								; (word)(HL) != 0?
-IB18_L1+*	LD	DE,0x0
+TR_PTR+*	LD	DE,0x0
 	LD		(HL),E
 	INC		HL
 	LD		(HL),D
@@ -1997,7 +2025,7 @@ IB18_L1+*	LD	DE,0x0
 	INC		HL
 	LD		(HL),A
 	INC		HL
-	LD		(IB18_L1),HL
+	LD		(TR_PTR),HL
 INIT_BUFF19
 	EX		DE,HL
 	EX		AF,AF'
@@ -2019,25 +2047,25 @@ INIT_BUFF20
 
 ; --- Unparsed -------------
 ; ----------------------------------------------------
-SUB_UNCOMP_5
+NEXT_SYM
 	PUSH	DE
 	XOR		A
 	LD		D,A
-	LD		HL,HL_VAL_001+1
+	LD		HL,CL_TR+1									; Code length
 	ADD		HL,DE
 	ADD		HL,DE										; HL = HL + 2*E
 	OR		(HL)
 	DEC		HL
 	LD		L,(HL)
 	LD		H,A											; HL = (HL)
-	JP		M,LAB_ram_d58c								; HL<0?
+	JP		M,LB_A_B7_1									; A<0? bit 7 = 1
 	PUSH	HL
-	LD		DE,CHAR_LENS
+	LD		DE,LEN_LD
 	ADD		HL,DE
-	LD		A,(HL)										; HL =>CHAR_LENS
+	LD		A,(HL)										; A - next bit count
 	POP		HL
 	POP		DE
-LAB_ram_d560
+DO_NXT_BITS
 	CALL	GET_RIGHT_A_BITS
 	LD		A,H
 	OR		A
@@ -2045,7 +2073,7 @@ LAB_ram_d560
 	LD		A,L
 	CP		0x9
 	RET		C
-	CP		29
+	CP		29											; 0x1D
 	LD		HL,0x200
 	RET		Z
 	DEC		A
@@ -2058,36 +2086,36 @@ LAB_ram_d560
 	LD		H,L
 	LD		L,A
 	LD		A,C
-LAB_ram_d57e
+DO_DBL_HL_C
 	ADD		HL,HL
 	DEC		C
-	JR		NZ,LAB_ram_d57e
+	JR		NZ,DO_DBL_HL_C
 	INC		H
-	CALL	GET_A_BITS
+	CALL	READ_A_BITS
 	INC		A
 	ADD		A,L
 	LD		L,A
 	RET		NC
 	INC		H
 	RET
-LAB_ram_d58c
+LB_A_B7_1
 	POP		DE
 	CALL	SUB_ram_d5cb
-	JR		LAB_ram_d560
+	JR		DO_NXT_BITS
 	
 ; ----------------------------------------------------
 SUB_UNCOMP_6
 	PUSH	DE
 	XOR		A
 	LD		D,A
-	LD		HL,HL_VAL_002+1
+	LD		HL,N_CODE+1
 	ADD		HL,DE
 	ADD		HL,DE
 	OR		(HL)
 	DEC		HL
 	LD		L,(HL)
 	LD		H,A
-	JP		M,LAB_ram_d5c5
+	JP		M,L_HLM
 	PUSH	HL
 	LD		DE,DISTANCES
 	ADD		HL,DE
@@ -2117,7 +2145,7 @@ HL_SL_C
 	ADD		HL,DE
 	POP		DE
 	RET
-LAB_ram_d5c5
+L_HLM
 	POP		DE
 	CALL	SUB_ram_d5cb
 	JR		LAB_ram_d5a9
@@ -2135,9 +2163,8 @@ HI_W_BIT1
 	INC		HL
 	INC		HL
 LD_NXT_A
-	LD		(LD_NXT_W+1),HL
-LD_NXT_W
-	LD		HL,(0x0000)
+	LD		(LD_NXT_W),HL
+LD_NXT_W+*	LD	HL,(0x0000)
 	BIT		0x7,H
 	JR		NZ,HI_W_BIT1
 	RET
@@ -2150,30 +2177,27 @@ FILL_2
 BYTE_ram_d619
 	DB 0
 
-CHAR_LENS
-	DS 256, 0
-CHAR_LENGTHS_256
-	DS 64,0
+LEN_LD
+	DS NR_LIT + NR_DIST, 0
+
 DISTANCES
 	DS 32,0
 
-HL_VAL_001
+CL_TR
 	DS 512,0
 	
-HL_VAL_002
+N_CODE
 	DS 512,0
 
-IX_VAL_001
-	DS 220, 0
+LIT_TR
+	DS 4 * NR_LIT, 0
 
-UNK001
-	DS 932, 0
+DIST_TR
+	DS 4 * NR_DIST,0
 
-IX_ARR_000
-	DS 128,0
-
-HL_ARR_000
-	DS 7046,0
+NODES
+	DS 2 * MAX_CL + 2
+	DS 7012,0
 
 CRC32_TAB
 	DB 0x00, 0x00, 0x00, 0x00, 0x96, 0x30, 0x07, 0x77, 0x2C, 0x61, 0x0E, 0xEE, 0xBA, 0x51, 0x09, 0x99
@@ -2241,6 +2265,7 @@ CRC32_TAB
 	DB 0x2E, 0x7A, 0x66, 0xB3, 0xB8, 0x4A, 0x61, 0xC4, 0x02, 0x1B, 0x68, 0x5D, 0x94, 0x2B, 0x6F, 0x2A
 	DB 0x37, 0xBE, 0x0B, 0xB4, 0xA1, 0x8E, 0x0C, 0xC3, 0x1B, 0xDF, 0x05, 0x5A, 0x8D, 0xEF, 0x02, 0x2D
 
+END_OF_CODE
 
 ;	IF  DEBUG == 1
 ;		SAVESNA "unzip.sna", START

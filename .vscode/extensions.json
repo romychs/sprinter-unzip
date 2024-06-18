@@ -4,7 +4,6 @@
 		"maziac.dezog",
 		"maziac.hex-hover-converter",
 		"maziac.z80-instruction-set",
-		"maziac.sna-fileviewer",
-		"maziac.nex-fileviewer",
+		"maziac.sna-fileviewer"
 	]
 }
