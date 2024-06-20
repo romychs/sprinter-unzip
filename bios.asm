@@ -205,6 +205,7 @@ _CH_DIR
 ; A - код ошибки, если CF=1
 _CURDIR
 	PUSH	DE
+	LD		DE, CUR_DIR
 	EX		HL,DE
 	LD		BC, CUR_DIR_SIZE
 	LDIR

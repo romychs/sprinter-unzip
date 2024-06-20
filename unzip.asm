@@ -1,13 +1,16 @@
 ; ====================================================
-;	PKUNZIP utility for Sprinter version 0.7
+;	PKUNZIP utility for Sprinter version 0.8
 ;   Created by Aleksey Gavrilenko 09.02.2002
 ;   Procedure deflate by Michail Kondratyev
+; ----------------------------------------------------
+;   Version 0.8 by Romychs, for DSS v1.70, 
+;   + support for current dir
 ; ====================================================
 
 ; Set to 1 to turn debug ON with DeZog VSCode plugin
 ; Set to 0 to compile .EXE
 DEBUG				EQU	0
-EXE_VERSION			EQU 0
+EXE_VERSION			EQU 1
 
 	SLDOPT COMMENT WPMEM, LOGPOINT, ASSERTION
 	
@@ -88,7 +91,7 @@ STACK_TOP
 ; ====================================================
 START
 	IF DEBUG == 1
-	LD IX,CMD_LINE2
+	LD IX,CMD_LINE1
 	ENDIF
 	PUSH	IX											; IX ptr to cmd line
 	POP		HL
@@ -99,31 +102,51 @@ START
 	LD		DE,PATH_OUTPUT
 	CALL	GET_CMD_PARAM
 	JR		NC,IS_SEC_PAR
-	LD		HL,PATH_INPUT								; In and out is same
-	LD		DE,PATH_OUTPUT
-	LD		BC,256
-	LDIR
+	; Set output dir to current dir
+	LD		C, DSS_CURDIR
+	LD		HL,PATH_OUTPUT
+	RST		DSS
+	JP		NC, START_L1
+	JP		ERR_FILE_OP
+
 IS_SEC_PAR
 	; split path and file name
 	LD		HL,PATH_OUTPUT
 	CALL	SPLIT_PATH_FILE
 	JR		START_L1
+
+	; Out start message and usage message, then exit to DSS
 INVALID_CMDLINE
-	LD		HL,START_MESSAGE							; "PKUNZIP utility for Sprinter 
+	LD		HL,MSG_START							
+	LD		C,DSS_PCHARS
+	RST		DSS
+	LD		HL,MSG_USAGE
 	LD		C,DSS_PCHARS
 	RST		DSS
 	LD		BC,DSS_EXIT
 	RST		DSS
+
 START_L1
 	LD		A,(PATH_INPUT)								; ToDo: No parameters, It is already checked before?
 	AND		A
 	JR		Z,INVALID_CMDLINE
-	LD		HL,START_MESSAGE							; "PKUNZIP utility for Sprinter 
+	LD		HL,MSG_START							; "PKUNZIP utility for Sprinter 
 	LD		C,DSS_PCHARS
 	RST		DSS
 	LD		HL,PATH_INPUT
 	CALL	SPLIT_PATH_FILE								; get zip file path and name from first cmd line parameter
 	JP		C,ERR_FILE_OP
+	; if input path is empty, get current dir
+	LD		A,(PATH_INPUT)
+	AND		A
+	JP	    NZ,INP_P_NE
+
+	LD		C, DSS_CURDIR
+	LD		HL,PATH_INPUT
+	RST		DSS
+
+
+INP_P_NE
 	LD		HL,MSG_INP_PATH								; "Input path:"
 	LD		C,DSS_PCHARS
 	RST		DSS
@@ -639,10 +662,13 @@ EOS_FOUND
 	AND		A
 	JR		NZ,BKSL_FOUND
 	POP		HL
+	PUSH 	HL
 	; copy 13 symbols of filepath to FILE_SPEC. 'filename.zip',0
 	LD		BC,13
 	LD		DE,FILE_SPEC
 	LDIR
+	POP 	HL
+	LD		(HL),0										; Mark path as empty
 	AND		A											; CF=0
 	RET
 BKSL_FOUND
@@ -760,10 +786,14 @@ LH_UCOMP_SIZE_L:
 LH_UCOMP_SIZE_H:		
 	DW	0
 
-START_MESSAGE:
-	DB  "PKUNZIP utility for Sprinter version 0.7\r\n"
+MSG_START
+	DB  "UNZIP utility for Sprinter v0.8.beta1\r\n"
 	DB  "Created by Aleksey Gavrilenko 09.02.2002\r\n"
-	DB  "Procedure deflate by Michail Kondratyev\r\n\r\n", 0
+	DB  "Procedure deflate by Michail Kondratyev\r\n"
+	DB  "Patched by Romych at 20.06.2024 for DSS v1.70+ support.\r\n\r\n", 0
+
+MSG_USAGE
+	DB  "Usage:\r\n unzip.exe <filepath.zip> [<out_dir>]\r\n\r\n",0
 
 MSG_INP_PATH:
 	DB	"Input path:", 0
@@ -775,10 +805,10 @@ MSG_EOL
 	DB "\r\n", 0
 
 MSG_DEPAC_COMPLT:
-	DB	"\r\nDepaking complited\r\n\n",0
+	DB	"\r\nUnpacking complited\r\n\n",0
 
 MSG_DEPAC_FILE:
-	DB	"Depaking file: ", 0
+	DB	"Unpacking file: ", 0
 
 MSG_ERR_CRC:
 	DB	"  Error CRC!", 0
@@ -826,25 +856,25 @@ MSG_FWRONG_FM
 	DB	"Wrong file manipulator!\r\n", 0
 
 MSG_NO_SPACE_FM
-	DB	"Not space for file manipulator!\r\n", 0
+	DB	"No space for file manipulator!\r\n", 0
 
 MSG_FILE_EXISTS2
 	DB	"File exist!\r\n", 0
 
 MSG_RDONLY
-	DB	"Read only!\r\n", 0
+	DB	"File read only!\r\n", 0
 
 MSG_ERR_ROOT
-	DB	"Error ROOT!\r\n", 0
+	DB	"Root overflow!\r\n", 0
 
 MSG_NO_SPACE
-	DB	"No space!\r\n", 0
+	DB	"Not free space!\r\n", 0
 
 MSG_PATH_EXISTS
 	DB	"Path exists!\r\n", 0
 
 MSG_WRONG_NAME
-	DB	"Wrong name!\r\n", 0
+	DB	"Invalid filename!\r\n", 0
 
 MSG_FATAL_ERR
 	DB	"Fatal error!\r\n", 0
@@ -1292,7 +1322,7 @@ WR_4000
 	LD		A,(SAVE_P0)
 	OUT		(PAGE0),A
 	; Write DC bytes from (HL) to A file handler
-	LD		DE,0x4000
+	LD		DE,0x4000									; bytes to write
 	LD		HL,PAGE3_ADDR
 	LD		C,DSS_WRITE
 	LD		A,(FH_OUT)
@@ -1332,11 +1362,9 @@ NO_B_TO_WR
 	RET
 
 FILL0
-	DS 8843, 0
+	DS TEMP_BUFFR-FILL0, 0
 
-TEMP_0
-	DB 0
-
+	ORG 0xB000
 ; 4096 bytes buffer AFFF-BFFF
 TEMP_BUFFR  
 	DS 6, 0
@@ -1353,7 +1381,6 @@ LH_EXTRA_LEN_L
 LH_EXTRA_LEN_H
 	DB	0
 LH_FILENAME
-
 	DS  1024, 0
 
 ;PAGE3_ADDR	

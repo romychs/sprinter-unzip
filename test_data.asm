@@ -25,7 +25,7 @@ ZIP_FILE
 ZIP_FILE_END
 
 CMD_LINE1
-    DB  20, " C:\\FOLDER\\ FILE.ZIP", 0
+    DB  10, " FILE.ZIP", 0
     
 CMD_LINE2
     DB  19, " C:\\FOLDER\\FILE.ZIP", 0
