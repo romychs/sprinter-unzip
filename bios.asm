@@ -52,6 +52,8 @@ DSS_HANDLER
 	JP		Z, _FIND_FIRST
 	CP		0x1D
 	JP      Z, _CH_DIR
+	CP		0x1E
+	JP      Z, _CURDIR
     CP      0x5C    
     JP      Z, _PCHARS
     CP      0x41
@@ -77,8 +79,7 @@ NXT_PCHAR
     JR	NZ, NXT_PCHAR
 
 NORM_EXIT
-	SCF
-    CCF
+	AND A												; CF=0
     POP BC
     POP HL    
     RET
@@ -110,6 +111,11 @@ _CREATE_FILE
 ;   A - файловый манипулятор, если CF=0
 CUR_FILE_MAN
     DB  0x4F
+
+CUR_DIR
+    DB "C:\\FOLDER\\",0
+CUR_DIR_END
+CUR_DIR_SIZE 	EQU 	CUR_DIR_END-CUR_DIR
 
 _OPEN_FILE
     LD      HL, CUR_FILE_MAN
@@ -190,6 +196,20 @@ _WRITE_FILE
 ; A - код ошибки, если CF=1
 _CH_DIR
     JP      NORM_EXIT
+
+
+; 1Eh (30) CURDIR (Информация о текущем каталоге)
+; Входные значения:
+; HL - буфер в памяти 256 байт
+; Выходные значения:
+; A - код ошибки, если CF=1
+_CURDIR
+	PUSH	DE
+	EX		HL,DE
+	LD		BC, CUR_DIR_SIZE
+	LDIR
+	POP 	DE
+	JP		NORM_EXIT
 
 ; Входные значения:
 ; HL - указатель на файловую спецификацию

@@ -7,7 +7,7 @@
 ; Set to 1 to turn debug ON with DeZog VSCode plugin
 ; Set to 0 to compile .EXE
 DEBUG				EQU	0
-
+EXE_VERSION			EQU 0
 
 	SLDOPT COMMENT WPMEM, LOGPOINT, ASSERTION
 	
@@ -34,6 +34,7 @@ DSS_FIND_FIRST		EQU 0x0119
 DSS_FIND_NEXT		EQU 0x011A
 DSS_MKDIR			EQU 0x1B
 DSS_CHDIR			EQU 0x1D
+DSS_CURDIR			EQU 0x1E
 DSS_EXIT			EQU 0x41
 DSS_PCHARS			EQU 0x5C
 
@@ -67,7 +68,7 @@ NR_DIST				EQU	32
 
 EXE_HEADER
 	DB	"EXE"
-	DB	0x00											; EXE Version
+	DB	EXE_VERSION										; EXE Version
 	DW	0x0080											; Code offset
 	DW	0
 	DW	0												; Primary loader size
@@ -92,19 +93,20 @@ START
 	PUSH	IX											; IX ptr to cmd line
 	POP		HL
 	INC		HL											; Skip size of Command line
-	LD		DE,INPUT_PATH
-	CALL	READ_CMD_PAR
+	LD		DE,PATH_INPUT
+	CALL	GET_CMD_PARAM
 	JR		C,INVALID_CMDLINE
-	LD		DE,OUTPUT_PATH
-	CALL	READ_CMD_PAR
+	LD		DE,PATH_OUTPUT
+	CALL	GET_CMD_PARAM
 	JR		NC,IS_SEC_PAR
-	LD		HL,INPUT_PATH								; In and out is same
-	LD		DE,OUTPUT_PATH
+	LD		HL,PATH_INPUT								; In and out is same
+	LD		DE,PATH_OUTPUT
 	LD		BC,256
 	LDIR
 IS_SEC_PAR
-	LD		HL,OUTPUT_PATH
-	CALL	FIND_FILE_NAME
+	; split path and file name
+	LD		HL,PATH_OUTPUT
+	CALL	SPLIT_PATH_FILE
 	JR		START_L1
 INVALID_CMDLINE
 	LD		HL,START_MESSAGE							; "PKUNZIP utility for Sprinter 
@@ -113,19 +115,19 @@ INVALID_CMDLINE
 	LD		BC,DSS_EXIT
 	RST		DSS
 START_L1
-	LD		A,(INPUT_PATH)
+	LD		A,(PATH_INPUT)								; ToDo: No parameters, It is already checked before?
 	AND		A
 	JR		Z,INVALID_CMDLINE
 	LD		HL,START_MESSAGE							; "PKUNZIP utility for Sprinter 
 	LD		C,DSS_PCHARS
 	RST		DSS
-	LD		HL,INPUT_PATH
-	CALL	FIND_FILE_NAME
+	LD		HL,PATH_INPUT
+	CALL	SPLIT_PATH_FILE								; get zip file path and name from first cmd line parameter
 	JP		C,ERR_FILE_OP
 	LD		HL,MSG_INP_PATH								; "Input path:"
 	LD		C,DSS_PCHARS
 	RST		DSS
-	LD		HL,INPUT_PATH
+	LD		HL,PATH_INPUT
 	LD		C,DSS_PCHARS
 	RST		DSS
 	LD		HL,MSG_EOL									; '\r'
@@ -134,7 +136,7 @@ START_L1
 	LD		HL,MSG_OUT_PATH								; "Out path:"
 	LD		C,DSS_PCHARS
 	RST		DSS
-	LD		HL,OUTPUT_PATH
+	LD		HL,PATH_OUTPUT
 	LD		C,DSS_PCHARS
 	RST		DSS
 	LD		HL,MSG_EOL									; '\r'
@@ -142,23 +144,26 @@ START_L1
 	RST		DSS
 	IN		A,(PAGE0)
 	LD		(SAVE_P0),A
-	LD		HL,INPUT_PATH
+	; Change dir to input file directory
+	LD		HL,PATH_INPUT
 	LD		C,DSS_CHDIR
 	RST		DSS
 	JP		C,ERR_FILE_OP
-	; Check input file exists
+	; Find first file by specified name or mask (*.zip for example)
 	LD		HL,FILE_SPEC
 	LD		DE,FF_WORK_BUF								; Work buffer
 	LD		BC,DSS_FIND_FIRST							; FIND_FIRST
 	LD		A,0x2f										; Attrs
 	RST		DSS
 	JP		C,ERR_FILE_OP								; File not found
-	JR		GOT_INP_FILE
-GET_NEXT_FILE
+	JR		OPEN_ZIP_FILE
+
+; ----------------------------------------------------
+DO_NEXT_FILE
 	LD		DE,FF_WORK_BUF
 	LD		BC,DSS_FIND_NEXT							; FIND_NEXT
 	RST		DSS
-	JR		NC,GOT_INP_FILE
+	JR		NC,OPEN_ZIP_FILE
 	CP		E_FILE_NOT_FOUND
 	JP		NZ,ERR_FILE_OP
 	LD		HL,MSG_DEPAC_COMPLT							; "\r\nDepaking complited\r\n\n"
@@ -166,7 +171,8 @@ GET_NEXT_FILE
 	RST		DSS
 	LD		BC,DSS_EXIT
 	RST		DSS
-GOT_INP_FILE
+
+OPEN_ZIP_FILE
 	LD		HL,FF_FILE_NAME
 	XOR		A
 	LD		C,DSS_OPEN_FILE
@@ -179,13 +185,14 @@ GOT_INP_FILE
 	LD		HL,FF_FILE_NAME
 	LD		C,DSS_PCHARS
 	RST		DSS
-RD_LOCL_HDR
-															
+
+RD_LOCAL_HDR
 	CALL	READ_HEADERS
 	JR		C,ERR_IN_ZIP
-	AND		A
-	JP		Z,GOT_LFH
-
+	AND		A											; it is LFH? 
+	JP		Z,DO_OUT_FNAME
+	; it is not local file header, but central directory
+	; close input file and go to next file
 CLOSE_AND_NXT
 	LD		A,(FH_INP)
 	LD		C,DSS_CLOSE_FILE
@@ -193,14 +200,17 @@ CLOSE_AND_NXT
 	JP		C,ERR_FILE_OP
 	XOR		A
 	LD		(FH_INP),A
-	JR		GET_NEXT_FILE
+	JR		DO_NEXT_FILE
+
 ERR_IN_ZIP
 	LD		HL,MSG_ERR_IN_ZIP							; "\r\nError in ZIP!\r\n"
 	LD		C,DSS_PCHARS
 	RST		DSS
 	JR		CLOSE_AND_NXT
-GOT_LFH
-	LD		HL,OUTPUT_PATH
+
+	; Build full file name from output path and  zip local header
+DO_OUT_FNAME
+	LD		HL,PATH_OUTPUT
 	LD		DE,TEMP_BUFFR
 	LD		BC,256
 	LDIR
@@ -209,40 +219,47 @@ GOT_LFH
 	RST		DSS
 	LD		HL,TEMP_BUFFR
 	XOR		A
+	; find end of path
 FND_PATH_CPY_END
 	CP		(HL)										; HL => TEMP_BUFFR
 	JR		Z,END_PATH_CPY
 	INC		HL
 	JR		FND_PATH_CPY_END
+	; check last symbol is '\'' and add if not
 END_PATH_CPY
 	DEC		HL
-	LD		A,(HL)										; HL => TEMP_0
+	LD		A,(HL)										
 	CP		"\\"
 	JR		Z,IS_DIR_SEP
 	INC		HL
-	LD		(HL),"\\"									; HL => TEMP_BUFFR
+	LD		(HL),"\\"									
 IS_DIR_SEP
 	INC		HL
 	LD		(HL),0x0									; mark end of string
 	LD		DE,ENTRY_FILE_NAME
-ADD_NAME_TO_PATH
+
+ADD_FNAME_TO_PATH
 	LD		A,(DE)										; =>ENTRY_FILE_NAME
 	LD		(HL),A										; =>TEMP_BUFFR + 1
 	INC		HL
 	INC		DE
-CHK_MV_END
+	; check end of file name
 	AND		A
-	JR		NZ,ADD_NAME_TO_PATH
+	JR		NZ,ADD_FNAME_TO_PATH
+
+	; replace UNIX slash to DOS back slash
 	LD		HL,TEMP_BUFFR
-CHK_SLASH
+CHK_SLASH	
 	LD		A,(HL)										; HL => TEMP_BUFFR
 	CP		'/'
-	JR		NZ,OUT_COMP_METHOD
+	JR		NZ,SYM_NO_BSLASH
 	LD		(HL),"\\"
-OUT_COMP_METHOD
+SYM_NO_BSLASH
 	INC		HL
 	AND		A
 	JR		NZ,CHK_SLASH
+
+	; Output compression method to screen
 	LD		HL,(LH_PARAMS)
 	LD		A,H
 	OR		A
@@ -288,29 +305,30 @@ OUT_COMP_MSG
 	LD		C,DSS_PCHARS
 	RST		DSS
 	
-MOVE_FP_REL
+	; move file pointer to next local header in zip file
+MV_TO_NEXT_LH
 	LD		HL,(LH_COMP_SIZE_H)
 	LD		IX,(LH_COMP_SIZE_L)
 	LD		BC,DSS_MOVE_FP_CP							; MOVE_FP from Current Pos
 	LD		A,(FH_INP)
 	RST		DSS
 	JP		C,ERR_FILE_OP
-	JP		RD_LOCL_HDR
+	JP		RD_LOCAL_HDR
 	
 COMP_PARAMS_EMP
 	LD		HL,MSG_UNKNOWN								; "Unknown:	"
 	LD		C,DSS_PCHARS
 	RST		DSS
-	JR		MOVE_FP_REL
+	JR		MV_TO_NEXT_LH
 	
 DIR_OR_EMPTY
 	LD		HL,TEMP_BUFFR
 	CALL	MAKE_FILE_PATH
 	OUT		(BRD_SND),A
 	JP		C,ERR_FILE_OP
-	JP		RD_LOCL_HDR
+	JP		RD_LOCAL_HDR
 	
-; Supported compression method. Stored of Deflate
+; Supported compression method. Stored or Deflate
 C_SUPPORTED
 	LD		HL,(LH_COMP_SIZE_L)
 	LD		(BYTES_REMAINS_L),HL
@@ -339,6 +357,9 @@ C_SUPPORTED
 	LD		A,(HL)										; HL => TEMP_0
 	CP		"\\"										; it is directory separator?
 	JR		Z,DIR_OR_EMPTY
+
+	; create output file and jump to ok, or try to create dir
+	; and then create output file
 	LD		HL,TEMP_BUFFR
 	XOR		A
 	LD		C,DSS_CREATE_FILE
@@ -346,16 +367,20 @@ C_SUPPORTED
 	JR		NC,OK_CREATE_FILE
 	CP		E_FILE_EXISTS								; FM = 7?
 	JR		Z,ERR_FILE_EXIST
+	; separate output file path and name
 	LD		HL,TEMP_BUFFR
-	CALL	FIND_FILE_NAME
+	CALL	SPLIT_PATH_FILE
 	JP		C,ERR_FILE_OP
-	LD		HL,TEMP_BUFFR
-	CALL	MAKE_FILE_PATH
+	; make output directory
+	LD		HL,TEMP_BUFFR								; HL => output file path
+	CALL	MAKE_FILE_PATH								
 	JP		C,ERR_FILE_OP
+	; change dir to output directory
 	LD		HL,TEMP_BUFFR
 	LD		C,DSS_CHDIR
 	RST		DSS
 	JP		C,ERR_FILE_OP
+	; create output file
 	LD		HL,FILE_SPEC
 	XOR		A
 	LD		C,DSS_CREATE_FILE
@@ -364,11 +389,12 @@ C_SUPPORTED
 	CP		E_FILE_EXISTS
 	JP		NZ,ERR_FILE_OP
 	
+	; If file exists, notify user, and jump to next file
 ERR_FILE_EXIST
 	LD		HL,MSG_FILE_EXISTS							; "  File exists!"
 	LD		C,DSS_PCHARS
 	RST		DSS
-	JP		MOVE_FP_REL
+	JP		MV_TO_NEXT_LH
 	
 OK_CREATE_FILE
 	LD		(FH_OUT),A
@@ -378,7 +404,8 @@ OK_CREATE_FILE
 	LD		HL,CRC32_L
 	LD		B,0x4										; TODO: Remove exltra B=4
 	
-CRC_CMP
+	; Compare CRC32 from header and calculated for output file
+CRC_CMP	
 	LD		A,(DE)										; DE => LH_CRC32
 	XOR		(HL)										; HL => CRC32
 	INC		HL
@@ -386,6 +413,7 @@ CRC_CMP
 	INC		A
 	JR		NZ, CRC_CHK_ERR
 	DJNZ	CRC_CMP
+	; CRC Ok, close output file and go to next header
 	LD		HL, MSG_OK_CR_LF							; ' '
 	LD		C, DSS_PCHARS
 	RST		DSS
@@ -395,9 +423,10 @@ CRC_CMP
 	JP		C,ERR_FILE_OP
 	XOR		A
 	LD		(FH_OUT),A									; mark File Manipulator as 0 - closed
-	JP		RD_LOCL_HDR
+	JP		RD_LOCAL_HDR
 	
 CRC_CHK_ERR
+	; Notify user about possible error and go to next header
 	LD		HL,MSG_ERR_CRC								; "  Error CRC!"
 	LD		C,DSS_PCHARS
 	RST		DSS
@@ -405,26 +434,9 @@ CRC_CHK_ERR
 	LD		C,DSS_CLOSE_FILE
 	RST		DSS
 	JP		C,ERR_FILE_OP
-	JP		RD_LOCL_HDR
+	JP		RD_LOCAL_HDR
 
-; STRUCT LH_PARAM_STRUCT
-; VERSION WORD
-; GPP_FLAG WORD
-; COMP_METHOD WORD
-; MTIME WORD
-; MDATE WORD
-; CRC32 DWORD
-; COMP_SIZE DWORD
-; UCOMP_SIZE DWORD
-; FNAME_LEN WORD
-; EXTRA_LEN WORD
-; FILENAME BYTE
-; ENDS
 
-; ----------------------------------------------------
-; Read local file header 
-; ret A=0 - for LocalHileHeader
-;	A=ff - for CentralDirectory
 ; ----------------------------------------------------
 ; ZIP Local File Header:
 ; +0 sw Signature 0x04034b50
@@ -440,6 +452,28 @@ CRC_CHK_ERR
 ; +28 w Extra field Len (m)
 ; +30 n FileName
 ; +30+n m Extra Field
+; ----------------------------------------------------
+
+; STRUCT LH_PARAM_STRUCT
+; VERSION WORD
+; 	GPP_FLAG WORD
+; 	COMP_METHOD WORD
+; 	MTIME WORD
+; 	MDATE WORD
+; 	CRC32 DWORD
+; 	COMP_SIZE DWORD
+; 	UCOMP_SIZE DWORD
+; 	FNAME_LEN WORD
+; 	EXTRA_LEN WORD
+; 	FILENAME BYTE
+; ENDS
+
+; ----------------------------------------------------
+; Read local file header to buffer
+; Out:  CF=0 - Ok
+;		A=0x00 - for LocalHileHeader
+;		A=0xff - for CentralDirectory
+;		CF=1 - Error
 ; ----------------------------------------------------
 READ_HEADERS
 	LD		A,(FH_INP)
@@ -532,11 +566,12 @@ NO_CENTRAL_DIR
 	RET
 
 ; ----------------------------------------------------
-; Read next cmd line parameter
+; Read next command line parameter
 ; Inp: HL - pointer to cmd line position
-;	DE - pointer to buffer to place parameter
+;	   DE - pointer to buffer to place parameter
+; Out: CF = 1 if no more parameters
 ; ----------------------------------------------------
-READ_CMD_PAR
+GET_CMD_PARAM
 	PUSH	DE
 
 FIRST_SPACE
@@ -544,11 +579,14 @@ FIRST_SPACE
 	INC		HL
 	AND		A
 	JR		Z,PARAM_EOL
+	; skip first space
 	CP		' '
 	JR		Z,FIRST_SPACE
 	DEC		HL
 
 PARAM_MOV
+	; move parameter to buffer pointed by DE byte by byte
+	; until space or 0 reached
 	LD		A,(HL)
 	AND		A
 	JR		Z,PARAM_EOL
@@ -560,9 +598,11 @@ PARAM_MOV
 	JR		PARAM_MOV
 
 PARAM_EOL
+	; set end of string marker 0 at parameter end
 	XOR		A
 	LD		(DE),A
 	POP		DE
+	; if parameter is empty, return CF=1
 	LD		A,(DE)
 	AND		A
 	RET		NZ
@@ -570,47 +610,55 @@ PARAM_EOL
 	RET
 
 ; ----------------------------------------------------
-; File name from filepath
-; HL - Buffer to seaarch
-; ret: CF=1 - error
-;	else FILE_SPEC = file name 
+; Split filepath for path and file specification 
+; (file name, or mask *.zip)
+; Inp: HL - Ptr to filepath, zero ended
+; Out: CF=1 - Error
+;	   CF=0 - FILE_SPEC and trunc filepath to path
 ; ----------------------------------------------------
-FIND_FILE_NAME
+SPLIT_PATH_FILE
 	PUSH	HL
-	LD		BC,0x80
+	; check next 128 bytes to find 0 - end of string
+	LD		BC,0x0080
 	LD		A,B
 	CPIR
 	LD		A,C
 	AND		A
-	JR		NZ,NOT_EOS
+	JR		NZ,EOS_FOUND
 	POP		HL
+	; return error flag
 	LD		A,0x10
 	SCF
 	RET
-NOT_EOS
+EOS_FOUND
+	; find back for last back slash \
 	LD		C,0x80
 	LD		A,"\\"
 	CPDR
 	LD		A,C
 	AND		A
-	JR		NZ,NOT_BKSL
+	JR		NZ,BKSL_FOUND
 	POP		HL
+	; copy 13 symbols of filepath to FILE_SPEC. 'filename.zip',0
 	LD		BC,13
 	LD		DE,FILE_SPEC
 	LDIR
-	AND		A
+	AND		A											; CF=0
 	RET
-NOT_BKSL
-	INC		HL
+BKSL_FOUND
+	; path + filename
+	; copy filename to FILE_SPEC
+	INC		HL											; HL =>  '\'
 	LD		DE,FILE_SPEC
 	LD		C,13
-	INC		HL
+	INC		HL											; HL => first symbol of filename
 	PUSH	HL
 	LDIR
 	POP		HL
+	; mark path endto last symbol of path
 	LD		(HL),0x0
 	POP		HL
-	AND		A
+	AND		A											; CF=0
 	RET
 
 ; ----------------------------------------------------
@@ -807,7 +855,7 @@ MSG_ERR_IN_ZIP
 MSG_BAD_TABLE
 	DB	"  File has bad table!", 0
 
-; RAM page for decompression needs
+; RAM page for decompression needsFindFi
 WORK_P0
 	DB	0Ah
 ; To save memory PAGE0 state
@@ -820,11 +868,11 @@ FH_INP
 FH_OUT
 	DB	0
 ; First parameter: Path to file
-INPUT_PATH
+PATH_INPUT
 	DS 256, 0											
 
 ; Second parameter: Path to .zip file
-OUTPUT_PATH
+PATH_OUTPUT
 	DS 256, 0											
 
 ; Work buffer for FindFist/FindNext op (256bytes)
@@ -834,6 +882,7 @@ FF_WORK_BUF
 FF_FILE_NAME
 	DS 223, 0
 
+; Output file name from zip local header
 ENTRY_FILE_NAME
 	DS 256, 0
 
