@@ -1362,15 +1362,18 @@ NO_B_TO_WR
 	RET
 
 FILL_3
-	DS TEMP_BUFFR-FILL_3, 0
+	DB 0	
+	ALIGN 0x2000, 0
+	DB 0
+	ALIGN 0x1000, 0
 
+	;DS TEMP_BUFFR-FILL_3, 0
 	ORG 0xB000
 ; 4096 bytes buffer AFFF-BFFF
 TEMP_BUFFR  
 	DS 6, 0
 GPP_FLAG
 	DB 0, 0
-TEMP_BUFFR_8
 	DS 18, 0
 LH_FN_LEN_L
 	DB	0
@@ -1384,7 +1387,7 @@ LH_FILENAME
 	DS  1024, 0
 
 ;PAGE3_ADDR	
-	ALIGN 16384, 0
+	ALIGN 0x4000, 0
 	ORG   0xC000
 
 	DS  4096, 0
@@ -1448,7 +1451,7 @@ DO_NEXT_BLOCK
 	LD		E,(HL)
 	INC		HL
 	LD		(TMP_BUFFER_ADDR),HL
-	CALL	GET_NEXT_8B								; DE = next 16 bit from inp; b=8
+	CALL	GET_NEXT_8B									; DE = next 16 bit from inp; b=8
 DO_NEXT_BLK
 ZIP_EOF+*	LD	A,0x0									; 0Ah - work mem blk in page0
 	OR		A
@@ -1545,8 +1548,11 @@ EXTRA_BITS
 	DB	1, 3, 7, 15, 31, 63, 127, 255					; 2^n-1
 
 BL_CNT
-	DS 70,0
-
+	DS 34,0
+BL_CNT_17
+	DW 0	
+BL_CNT_18
+	DS 34,0
 ; ----------------------------------------------------
 ; Return A number of bits in HL from block
 ; ----------------------------------------------------
@@ -1713,8 +1719,8 @@ GET_NXT_CL
 	LD		D,0x0
 	PUSH	HL
 	LD		HL,LIT_TR
-	ADD		HL,DE
-	LD		(HL),A										; => ram_db8a
+	ADD		HL,DE										
+	LD		(HL),A										; reorder code lengths alphabet in straigth order
 	POP		HL
 	POP		DE
 	INC		HL
@@ -1725,7 +1731,7 @@ GET_NXT_CL
 	LD		HL,CL_TR
 	LD		DE,LIT_TR
 	LD		BC,NR_CL						
-	CALL	BUILD_CODE
+	CALL	BUILD_CODE									; build huffman codes for codelength
 	LD		HL,(HLIT)
 	LD		DE,(HDIST)
 	ADD		HL,DE
@@ -1802,7 +1808,7 @@ CL_HL_0
 ; Load literal/length and distance alphabets
 ; ------------------------------------------------------
 LOAD_LIT_DIST
-; Load HLIT + 257 code lengths for the literal/length alphabet
+; Load HLIT + 257 code lengths for the literal/length alphabet 
 HLIT+*	LD	BC,0x0100									; Count of literals and lengths (+257)
 	LD		DE,LEN_LD
 	LD		HL,CL_TR
@@ -1820,6 +1826,11 @@ HDIST+*	LD	BC,0x0
 	RET
 
 ; ------------------------------------------------------
+; Build huffman codes by coldee lengths
+;	In: HL - Pointer to dest huffman tree
+;		DE - Pointer to code lenthts table 
+;		BC - Length of code lengths table
+; ------------------------------------------------------
 BUILD_CODE
 	LD		A,B
 	OR		C
@@ -1829,7 +1840,7 @@ BUILD_CODE
 	LD		HL,BL_CNT
 	PUSH	HL												
 	PUSH	BC
-	LD		BC,0x2000									
+	LD		BC,0x2000									; ToDo: may be 0x2600?
 
 	; BL_CNT[32]=0
 BL_CNT_0
@@ -1844,7 +1855,7 @@ BC_LP_1
 	LD		A,(DE)										; DE -> LIT_TR
 	INC		DE
 	ADD		A,A
-	ADD		A,9											; distance*2 + 9
+	ADD		A,low(BL_CNT)								; len*2 + offset
 	LD		L,A
 	INC		(HL)
 	JR		NZ,BC_NO_L
@@ -1857,7 +1868,7 @@ BC_NO_L
 	OR		C
 	JR		NZ,BC_LP_1
 
-	LD		L,45
+	LD		L,low(BL_CNT_18)							; 45
 	LD		(HL),C
 	INC		HL
 	LD		(HL),C
@@ -1866,7 +1877,7 @@ BC_NO_L
 	
 INIT_BUFF4
 	LD		A,C
-	ADD		A,0x9
+	ADD		A,low(BL_CNT)
 	LD		L,A
 	LD		E,(HL)
 	INC		HL
@@ -1880,7 +1891,7 @@ INIT_BUFF4
 	INC		C
 	INC		C
 	LD		A,C
-	ADD		A,43
+	ADD		A,low(BL_CNT_17)							; 43
 	LD		L,A
 	LD		(HL),E
 	INC		HL
@@ -1893,7 +1904,7 @@ INIT_BUFF4
 	LD		D,B
 	LD		E,B
 	LD		A,15
-	LD		L,11
+	LD		L,low(BL_CNT)+2
 	
 INIT_BUFF5
 	LD		C,(HL)
@@ -1915,7 +1926,7 @@ CHAR_L_NE0
 NR_SYM+*	LD	BC,0x0
 	LD		HL,NODES
 INIT_BUFF6
-	LD		A,(DE)										; Char lengths?
+	LD		A,(DE)										; DE => LIT_TR + offset
 	INC		DE
 	PUSH	DE
 	ADD		A,A
@@ -1923,8 +1934,8 @@ INIT_BUFF6
 	LD		D,A
 	JR		Z,CHAR_L_E0
 	PUSH	HL
-	LD		H,high BL_CNT										; 0xD2
-	ADD		A,(low BL_CNT) + 34									; +43
+	LD		H,high BL_CNT								; 0xD2
+	ADD		A,low BL_CNT_17								; +43
 	LD		L,A
 	LD		E,(HL)
 	INC		HL
@@ -1950,19 +1961,19 @@ CHAR_L_E0
 	LD		HL,NODES
 	LD		BC,(NR_SYM)
 INIT_BUFF7
-	LD		A,(DE)
+	LD		A,(DE)										; DE => LIT_TR+offset
 	INC		DE
 	DEC		A
-	JP		M,INIT_BUFF11
+	JP		M,INIT_BUFF11								; code=0 or 1
 	JR		Z,INIT_BUFF11
 	PUSH	DE
-	LD		E,(HL)
+	LD		E,(HL)										; HL => NODES + offset
 	INC		HL
-	LD		D,(HL)
+	LD		D,(HL)										; DE = [NODES + offset]
     PUSH	HL
     LD		HL,0x0
 INIT_BUFF8
-	SRL		D
+	SRL		D											; DE >> 1
 	RR		E
 	ADC		HL,HL
 	EX		AF,AF'
@@ -1983,9 +1994,9 @@ INIT_BUFF10
 	JR		NZ,INIT_BUFF10
 	EX		DE,HL
 	POP		HL
-	LD		(HL),D											; => NODES_1
+	LD		(HL),D										; => NODES_1
 	DEC		HL
-	LD		(HL),E											; => NODES
+	LD		(HL),E										; => NODES
 	POP		DE
 INIT_BUFF11
 	INC		HL
@@ -1995,20 +2006,20 @@ INIT_BUFF11
 	OR		B
 	JR		NZ,INIT_BUFF7
 
-LEN_PTR+*	LD	HL,0x0000
+LEN_PTR+*	LD	HL,0x0000								; HL => CL_TR
 	LD		E,L
 	LD		D,H
 	INC		DE
 	LD		BC,511
 	LD		(HL),A
-	LDIR												; Shift LEN_TR  right 1 byte
+	LDIR												; Shift CL_TR or LEN_TR  right 1 byte
 	POP		HL
 	LD		BC,(NR_SYM)
 	DEC		BC
 	ADD		HL,BC
 	EX		DE,HL
 	//;+++
-	LD		(TR_PTR),IX								; LIT_TR or DIST_TR addr
+	LD		(TR_PTR),IX									; LIT_TR or DIST_TR addr
 	LD		HL,NODES+1
 	ADD		HL,BC
 	ADD		HL,BC
@@ -2019,7 +2030,7 @@ INIT_BUFF12
 	JR		Z,INIT_BUFF16
 	CP		0x9
 	PUSH	DE
-	LD		D,(HL)
+	LD		D,(HL)										; => NODES + offset
 	DEC		HL
 	LD		E,(HL)
 	INC		HL
@@ -2259,12 +2270,14 @@ LEN_LD
 DISTANCES
 	DS 32,0
 
+; 
 CL_TR
 	DS 512,0
 	
 N_CODE
 	DS 512,0
 
+; Command codes lengths
 LIT_TR
 	DS 4 * NR_LIT, 0
 
