@@ -38,6 +38,8 @@ DSS_HANDLER
     PUSH    HL
     PUSH    BC
     LD      A, C
+    CP      DSS_CURDISK
+    JP      Z, _CURDISK
     CP      0x0B
     JP      Z, _CREATE_FILE
     CP      0x11
@@ -91,6 +93,10 @@ BAD_EXIT
     RET
 
 
+_CURDISK
+	LD A, 3
+	JP      NORM_EXIT
+
 ; Входные значения:
 ; HL - указатель на файловую спецификацию
 ; A - атрибут файла
@@ -113,7 +119,7 @@ CUR_FILE_MAN
     DB  0x4F
 
 CUR_DIR
-    DB "C:\\FOLDER\\",0
+    DB "\\FOLDER",0
 CUR_DIR_END
 CUR_DIR_SIZE 	EQU 	CUR_DIR_END-CUR_DIR
 

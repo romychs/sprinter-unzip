@@ -27,6 +27,7 @@ EXE_VERSION			EQU 1
 DSS					EQU 0x10
 
 ; DSS Functions
+DSS_CURDISK			EQU 0x02
 DSS_CREATE_FILE		EQU 0x0B
 DSS_OPEN_FILE		EQU 0x11
 DSS_CLOSE_FILE		EQU 0x12
@@ -102,12 +103,10 @@ START
 	LD		DE,PATH_OUTPUT
 	CALL	GET_CMD_PARAM
 	JR		NC,IS_SEC_PAR
-	; Set output dir to current dir
-	LD		C, DSS_CURDIR
+	; if not specified, set output dir to current dir
 	LD		HL,PATH_OUTPUT
-	RST		DSS
-	JP		NC, START_L1
-	JP		ERR_FILE_OP
+	CALL    GET_CUR_DIR
+	JP		START_L1
 
 IS_SEC_PAR
 	; split path and file name
@@ -115,7 +114,7 @@ IS_SEC_PAR
 	CALL	SPLIT_PATH_FILE
 	JR		START_L1
 
-	; Out start message and usage message, then exit to DSS
+	; Out start and usage messages, then exit to DSS
 INVALID_CMDLINE
 	LD		HL,MSG_START							
 	LD		C,DSS_PCHARS
@@ -141,10 +140,8 @@ START_L1
 	AND		A
 	JP	    NZ,INP_P_NE
 
-	LD		C, DSS_CURDIR
 	LD		HL,PATH_INPUT
-	RST		DSS
-
+	CALL	GET_CUR_DIR
 
 INP_P_NE
 	LD		HL,MSG_INP_PATH								; "Input path:"
@@ -180,6 +177,62 @@ INP_P_NE
 	RST		DSS
 	JP		C,ERR_FILE_OP								; File not found
 	JR		OPEN_ZIP_FILE
+
+; ----------------------------------------------------
+;  Get full current path
+;  Inp: HP - pointer to buffer for path
+; ----------------------------------------------------
+GET_CUR_DIR
+	PUSH 	HL
+
+    LD		C, DSS_CURDISK
+	RST		DSS
+	JP		C,ERR_FILE_OP
+	ADD     A, 65
+	LD		(HL),A
+	INC		HL
+	LD		(HL),':'
+	INC     HL
+	LD		C, DSS_CURDIR
+	RST		DSS
+	JP		C,ERR_FILE_OP
+
+	LD		HL,GCP2
+	LD		C,DSS_PCHARS
+	RST		DSS
+
+	POP 	HL
+	CALL	ADD_BACK_SLASH
+	RET
+
+GCP1	DB "GCP1\r\n",0
+GCP2	DB "GCP2\r\n",0
+; ----------------------------------------------------
+; Add back slash to path string
+; Inp: HL - pointer to zero ended string with path
+; Out: HL - point to end
+; ----------------------------------------------------
+ADD_BACK_SLASH
+	XOR		A
+	; find end of path
+FIND_DIR_END
+	CP		(HL)
+	JR		Z,IS_DIR_END
+	INC		HL
+	JR		FIND_DIR_END
+	; check last symbol is '\'' and add if not
+IS_DIR_END
+	DEC		HL
+	LD		A,(HL)
+	CP		"\\"
+	JR		Z,IS_DIR_SEP
+	INC		HL
+	LD		(HL),"\\"									
+IS_DIR_SEP
+	; mark new end of string
+	INC		HL	
+	LD		(HL),0x0									
+	RET
 
 ; ----------------------------------------------------
 DO_NEXT_FILE
@@ -241,24 +294,9 @@ DO_OUT_FNAME
 	LD		C,DSS_PCHARS
 	RST		DSS
 	LD		HL,TEMP_BUFFR
-	XOR		A
-	; find end of path
-FND_PATH_CPY_END
-	CP		(HL)										; HL => TEMP_BUFFR
-	JR		Z,END_PATH_CPY
-	INC		HL
-	JR		FND_PATH_CPY_END
-	; check last symbol is '\'' and add if not
-END_PATH_CPY
-	DEC		HL
-	LD		A,(HL)										
-	CP		"\\"
-	JR		Z,IS_DIR_SEP
-	INC		HL
-	LD		(HL),"\\"									
-IS_DIR_SEP
-	INC		HL
-	LD		(HL),0x0									; mark end of string
+
+	CALL	ADD_BACK_SLASH
+
 	LD		DE,ENTRY_FILE_NAME
 
 ADD_FNAME_TO_PATH
@@ -787,25 +825,24 @@ LH_UCOMP_SIZE_H:
 	DW	0
 
 MSG_START
-	DB  "UNZIP utility for Sprinter v0.8.beta1\r\n"
+	DB  "UNZIP utility for Sprinter v0.8.beta2\r\n"
 	DB  "Created by Aleksey Gavrilenko 09.02.2002\r\n"
-	DB  "Procedure deflate by Michail Kondratyev\r\n"
-	DB  "Patched by Romych at 20.06.2024 for DSS v1.70+ support.\r\n\r\n", 0
+	DB  "Procedure deflate by Michail Kondratyev\r\n\r\n",0
 
 MSG_USAGE
 	DB  "Usage:\r\n unzip.exe <filepath.zip> [<out_dir>]\r\n\r\n",0
 
 MSG_INP_PATH:
-	DB	"Input path:", 0
+	DB	"Input path: ", 0
 
 MSG_OUT_PATH:
-	DB	"Out path:", 0
+	DB	"Out path: ", 0
 
 MSG_EOL
 	DB "\r\n", 0
 
 MSG_DEPAC_COMPLT:
-	DB	"\r\nUnpacking complited\r\n\n",0
+	DB	"\r\nUnpacking completed\r\n\n",0
 
 MSG_DEPAC_FILE:
 	DB	"Unpacking file: ", 0
